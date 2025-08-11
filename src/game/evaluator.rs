@@ -1,9 +1,9 @@
-use std::{sync::{mpsc::{Receiver, Sender}, Arc}, time::Duration};
+use std::sync::{mpsc::{Receiver, Sender}, Arc};
 
 use eframe::egui::mutex::Mutex;
 use stockfish::Stockfish;
 
-use crate::{engine::PieceColor, etc::STOCKFISH_ELO, ui::app::MyApp};
+use crate::{engine::PieceColor, ui::app::MyApp};
 
 pub struct EvaluatorQueue {
     pub eval_queue: Vec<EvaluationRequest>,

@@ -1,4 +1,4 @@
-use std::{error::Error};
+use std::{error::Error, path::Display};
 
 use crate::{engine::{fen::fen_parser, move_gen::MoveError, ChessPiece, PieceColor, PieceType}, etc::{DEFAULT_FEN, DEFAULT_STARTING}, game::controller::LostBy};
 use chrono::Local;
@@ -17,6 +17,12 @@ pub struct Board{
     pub state: BoardState,
     pub meta_data: BoardMetaData,
 
+}
+pub struct MoveInfo{
+    pub old_pos: (u8, u8),
+    pub new_pos: (u8, u8), 
+    pub promotion: Option<PieceType>,
+    pub is_capture: bool,
 }
 
 #[derive(Clone)]
@@ -167,7 +173,7 @@ impl From<&String> for Board{
     }
 }
 impl Board {
-    pub fn move_piece(&mut self, old_pos:(u8,u8), new_pos: (u8, u8)) -> Result<(), MoveError> {
+    pub fn move_piece(&mut self, old_pos:(u8,u8), new_pos: (u8, u8)) -> Result<MoveInfo, MoveError> {
         let (old_rank, old_file) = old_pos;
         let (new_rank, new_file) = new_pos;
         
@@ -223,8 +229,14 @@ impl Board {
                                     }
                                     self.en_passant_target = None;
                                     if !self.state.promtion_pending.is_some() {
-                                        let uci = self.encode_uci_move(old_pos, new_pos, None);
-                                        self.record_move(old_pos, new_pos, None, true);
+                                        self.change_turn();
+                                        self.deselect_piece();
+                                        return Ok(MoveInfo {
+                                            old_pos: (old_rank, old_file),
+                                            new_pos: (new_rank, new_file),
+                                            promotion: None,
+                                            is_capture: true,
+                                        });
                                     }
                                     self.change_turn();
                                     self.deselect_piece();
@@ -250,8 +262,14 @@ impl Board {
                                     self.squares[epr as usize][epf as usize]=None;
                                     self.en_passant_target = None;
                                     if !self.state.promtion_pending.is_some() {
-                                        let uci = self.encode_uci_move(old_pos, new_pos, None);
-                                        self.record_move(old_pos, new_pos, None, true);
+                                        self.change_turn();
+                                        self.deselect_piece();
+                                        return Ok(MoveInfo {
+                                            old_pos: (old_rank, old_file),
+                                            new_pos: (new_rank, new_file),
+                                            promotion: None,
+                                            is_capture: true,
+                                        });
                                     }
                                     self.change_turn();
                                     self.deselect_piece();
@@ -276,10 +294,14 @@ impl Board {
                                     self.state.black_taken.push(capture);
                                 }
                             }
-                            let uci = self.encode_uci_move(old_pos, new_pos, None);
-                            self.record_move(old_pos, new_pos, None, true);
                             self.change_turn();
                             self.deselect_piece();
+                            return Ok(MoveInfo {
+                                old_pos: (old_rank, old_file),
+                                new_pos: (new_rank, new_file),
+                                promotion: None,
+                                is_capture: true,
+                            });
                         }
                     }
                     
@@ -306,13 +328,16 @@ impl Board {
                     if piece.kind == PieceType::Pawn {
                         self.halfmove_clock = 0;
                     }
-                    let uci = self.encode_uci_move(old_pos, new_pos, None);
-                    self.record_move(old_pos, new_pos, None, false);
                                    
                     self.change_turn();
                     self.deselect_piece();
                     
-
+                    return Ok(MoveInfo {
+                        old_pos: (old_rank, old_file),
+                        new_pos: (new_rank, new_file),
+                        promotion: None,
+                        is_capture: false,
+                    });
                 }
                 else {
                     return Err(MoveError::IllegalMove);
@@ -325,11 +350,14 @@ impl Board {
             }
         }
         
-        
-        
-        //iffailed return the piece to itssquare
-       
-        Ok(())
+        // This return is for cases where we have promotion pending
+        // or other special cases that don't return earlier
+        Ok(MoveInfo {
+            old_pos: (old_rank, old_file),
+            new_pos: (new_rank, new_file),
+            promotion: None,
+            is_capture: captures.contains(&new_pos),
+        })
     }
     
     pub fn change_turn(&mut self){
@@ -410,7 +438,7 @@ impl Board {
         self.state.selected_piece = None;
         self.state.quiet_moves = None;
     }
-    pub fn record_move(&mut self, from: (u8, u8), to: (u8, u8), promotion: Option<PieceType>, is_capture: bool) {
+    pub fn record_move(&mut self, from: (u8, u8), to: (u8, u8), promotion: Option<PieceType>, is_capture: bool, eval_score: f32) {
         let uci = self.encode_uci_move(from, to, promotion);
         
         // Convert board coordinates to algebraic notation
@@ -426,7 +454,7 @@ impl Board {
             to: format!("{}{}", to_file, to_rank),
             promotion: promotion,
             is_capture: is_capture,
-            evaluation: 0.0,
+            evaluation: eval_score,
             time_stamp: 0.0,
             san: "".to_string(), // Could use std::time::SystemTime if needed
         };

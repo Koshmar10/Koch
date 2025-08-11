@@ -107,7 +107,7 @@ impl Board{
         depth: u8,
         dir: (VerticalDirection, HorizontalDirection),
     ) -> Vec<(u8, u8)> {
-        let (mut dr, mut dc) = match dir {
+        let (dr, dc) = match dir {
             (VerticalDirection::Up,    HorizontalDirection::Left)  => (if piece.color == PieceColor::White {-1} else {1}, -1),
             (VerticalDirection::Up,    HorizontalDirection::Right) => (if piece.color == PieceColor::White {-1} else {1},  1),
             (VerticalDirection::Down,  HorizontalDirection::Left)  => (if piece.color == PieceColor::White {1} else {-1}, -1),
@@ -144,7 +144,7 @@ impl Board{
 
     pub fn get_rank_moves(&self, piece: &ChessPiece, depth: u8, h: HorizontalDirection) -> Vec<(u8, u8)> {
         let mut moves:Vec<(u8, u8)> = Vec::new();
-        let mut  dir: i8 = match h {
+        let dir: i8 = match h {
             HorizontalDirection::Left => -1,
             HorizontalDirection::Right => 1,
         };
@@ -186,7 +186,7 @@ impl Board{
     }
     pub fn get_file_moves(&self, piece: &ChessPiece, depth: u8, h: VerticalDirection) -> Vec<(u8, u8)> {
         let mut moves:Vec<(u8, u8)> = Vec::new();
-        let mut dir: i8 = match h {
+        let dir: i8 = match h {
             VerticalDirection::Down => if piece.color == PieceColor::White {1} else {-1},
             VerticalDirection::Up => if piece.color == PieceColor::White {-1} else {1},
         };

@@ -1,7 +1,7 @@
-use eframe::egui::{self, vec2, Button, CentralPanel, Color32, CornerRadius, Frame, SidePanel, Stroke};
+use eframe::{egui::{self, vec2, Button, CentralPanel, Color32, CornerRadius, Frame, RichText, SidePanel, Stroke}, App};
 
-use crate::{engine::{Board, PieceColor, PieceType}, game::{controller::{GameController, GameMode}, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, MyApp}, DEFAULT_FEN}};
-
+use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp}, DEFAULT_FEN}};
+use crate::engine::board::MoveStruct;
 
 
 impl MyApp{
@@ -85,7 +85,7 @@ impl MyApp{
                         }
                         ui.add_space(4.0);
                         if ui.add(history_btn).clicked() {
-                            self.screen = AppScreen::History;
+                            self.screen = AppScreen::History(HistoryScreenVariant::PastGameSelectionView);
                         }
                             
                     } );
@@ -119,6 +119,9 @@ impl MyApp{
                         None => None,
                     }
                 ));
+                if ui.button("menu").clicked(){
+                    self.screen = AppScreen::MainMenu;
+                }
                 if ui.button("flip").clicked() {
                     self.board.state.pov = match self.board.state.pov {
                         PieceColor::White => PieceColor::Black,
@@ -139,14 +142,28 @@ impl MyApp{
                 if ui.button("start-game").clicked() {
                    
                     self.board = Board::from(&DEFAULT_FEN.to_owned());
-                   
+                    self.board.meta_data.starting_position = DEFAULT_FEN.to_owned();
+                    self.board.meta_data.date = chrono::Local::now().format("%Y.%m.%d").to_string();
                     self.game.game_over = false;
                     let colors = [PieceColor::White, PieceColor::Black];
                     let player_color = colors[rand::random::<i32>() as usize % 2];
                     self.game.player = player_color;
                     self.game.enemey = match player_color {
-                        PieceColor::White => PieceColor::Black,
-                        PieceColor::Black => PieceColor::White,
+                        PieceColor::White => {
+                            self.board.meta_data.white_player_elo  = 800; // to be modified
+                            self.board.meta_data.white_player_name = PLAYER_NAME.to_owned(); 
+                            self.board.meta_data.black_player_elo = STOCKFISH_ELO;
+                            self.board.meta_data.black_player_name = "Stockfish".to_owned();
+                            PieceColor::Black}
+                            ,
+                        PieceColor::Black => {
+                            
+                            self.board.meta_data.white_player_elo  = STOCKFISH_ELO; // to be modified
+                            self.board.meta_data.white_player_name = "Stockfish".to_owned(); 
+                            self.board.meta_data.black_player_elo = 800;
+                            self.board.meta_data.black_player_name = PLAYER_NAME.to_owned();
+                            
+                            PieceColor::White},
                     };
                     if self.board.state.pov != self.game.player {
                         self.board.state.pov = match self.board.state.pov {
@@ -172,6 +189,7 @@ impl MyApp{
                         }
                     }
                 }
+                
                 ui.label(format!("current eval: {}", self.get_evaluation()));
 
                 ui.vertical(|ui| {
@@ -239,7 +257,7 @@ impl MyApp{
                                         PieceType::Rook,
                                     ] {
                                         if ui.button(kind.to_string()).clicked() {
-                                            self.board.record_move(old_pos, new_pos, Some(kind), false);
+                                            self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
                                             self.board.promote_pawn(new_pos, kind);
                                             self.board.state.promtion_pending = None;
                                             ctx.request_repaint();
@@ -250,6 +268,99 @@ impl MyApp{
                     }
                     
 
+                });
+    }
+    pub fn render_past_game_selection_view(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+       let games_to_render: Vec<BoardMetaData> = match get_game_list(){
+        Ok(x) => x,
+        Err(e) => {println!("{}", e); Vec::new()},
+       };
+       
+       let pad = self.ui.padding as f32;
+       //get games TODO
+       CentralPanel::default()
+                .frame(Frame::default().fill(Color32::BLACK))
+                .show(ctx, |ui| {
+                    ui.vertical(|ui |{
+                        ui.add_space(pad);
+                        ui.horizontal(|ui|{
+                            ui.add_space(pad);
+                            if ui.button("Back").clicked() {
+                                self.screen = AppScreen::MainMenu
+                            }
+                            if ui.button("Delete DB").clicked() {
+                                destroy_database();
+                            }
+                        });
+                        if !games_to_render.is_empty() {
+                            for game in games_to_render {
+                                if ui.label(format!(
+                                    "{} vs {} on {}",
+                                    game.white_player_name, game.black_player_name, game.date
+                                )).clicked(){
+                                    self.screen=AppScreen::History(HistoryScreenVariant::GameAnalyzerView(game));
+                                }
+                            }
+                        
+                            
+                        }
+                        else{
+                            ui.label(
+                                RichText::new("No chess games played")
+                                    .size(16.0),
+                            );
+                        }
+
+                    })
+                });
+    }
+    pub fn render_analyzer_view(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, metadata: &BoardMetaData){
+        let pad = self.ui.padding;
+        CentralPanel::default()
+                .frame(Frame::default().fill(Color32::BLACK))
+                .show(ctx, |ui| {
+                    
+                    ui.vertical_centered_justified(|ui|{
+                        ui.horizontal(|ui| {
+                            if ui.button("back").clicked() {
+                                self.screen = AppScreen::History(HistoryScreenVariant::PastGameSelectionView);
+                            }
+                        });
+                        ui.add_space(pad as f32);
+                        ui.label(RichText::new(format!("Date: {}", metadata.date)).size(16.0));
+                        ui.add_space(pad as f32);
+
+                        ui.label(RichText::new(format!("White: {} (ELO: {})", 
+                            metadata.white_player_name, metadata.white_player_elo)).size(16.0));
+                        ui.add_space(pad as f32);
+
+                        ui.label(RichText::new(format!("Black: {} (ELO: {})",
+                            metadata.black_player_name, metadata.black_player_elo)).size(16.0));
+                        ui.add_space(pad as f32);
+
+                        ui.label(RichText::new("Starting Position:").size(16.0));
+                        ui.label(RichText::new(metadata.starting_position.clone()).size(14.0));
+                        ui.add_space(pad as f32);
+
+                        // For the move list, we'll use a wrappable horizontal container
+                        ui.label(RichText::new("Moves:").size(16.0));
+                        ui.add_space(pad as f32);
+
+                        // Wrappable horizontal container for move list
+                        egui::ScrollArea::horizontal().show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                // Adjust this based on how moves are stored in your BoardMetaData
+                                if !metadata.move_list.is_empty() {
+                                    for (i, chess_move) in metadata.move_list.iter().enumerate() {
+                                        ui.label(RichText::new(format!("{:?}. {}", i+1, chess_move.uci)).size(14.0));
+                                        ui.add_space(5.0);
+                                    }
+                                } else {
+                                    ui.label(RichText::new("No moves recorded").size(14.0));
+                                }
+                            });
+                        });
+                    })
                 });
     }
 }

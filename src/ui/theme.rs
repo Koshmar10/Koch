@@ -10,8 +10,6 @@ use eframe::egui::TextureHandle;
 use eframe::egui::TextureOptions;
 
 
-use load::{SizeHint, LoadError};
-use egui_extras::install_image_loaders;
 
 use eframe::CreationContext;
 

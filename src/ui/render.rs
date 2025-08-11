@@ -1,4 +1,4 @@
-use eframe::{egui::{pos2, vec2, Color32, CornerRadius, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder}, egui_glow::painter, glow::TEXTURE14};
+use eframe::egui::{pos2, vec2, Color32, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
 
 use crate::{engine::{ChessPiece, PieceColor}, ui::app::MyApp};
 

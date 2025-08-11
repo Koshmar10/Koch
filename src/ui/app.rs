@@ -1,12 +1,13 @@
-use eframe::{egui::{self, vec2, CentralPanel, Color32, Frame, SidePanel, Stroke}, CreationContext};
+use eframe::{egui::{self}, CreationContext};
 
-use crate::{engine::{Board, PieceColor, PieceType}, game::{controller::{GameController, GameMode}, evaluator::Evaluator}, ui::{theme, ui_setting::UiSettings, DEFAULT_FEN}};
+use crate::{database::create::create_database, engine::{board::BoardMetaData, Board}, game::{controller::GameController, evaluator::Evaluator}, ui::{theme, ui_setting::UiSettings, DEFAULT_FEN}};
 
+pub enum HistoryScreenVariant { PastGameSelectionView, GameAnalyzerView(BoardMetaData)}
 pub enum AppScreen {
     MainMenu,
     TrainWithAi,
     Multiplayer,
-    History,
+    History(HistoryScreenVariant),
     Analyze,
 }
 #[derive(Clone)]
@@ -18,6 +19,7 @@ pub struct MyApp {
     pub board: Board,
     pub game: GameController,
     pub evaluator: Evaluator,
+    pub past_games: Option<Vec<BoardMetaData>>,
     pub ui: UiSettings,
 }
 
@@ -37,9 +39,14 @@ impl From<&CreationContext<'_>> for MyApp{
                 board: Board::from(&DEFAULT_FEN.to_owned()),
                 game: GameController::default(),
                 evaluator: Evaluator::new(),
-                ui : UiSettings::default()
+                past_games: None,
+                ui : UiSettings::default(),
+                
+
             };
         app.start_evaluator();
+        let res = create_database();
+        println!("{:?}", res);
         return app
 
         
@@ -50,16 +57,24 @@ impl From<&CreationContext<'_>> for MyApp{
 //Update loop
 impl eframe::App for MyApp {
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        match self.screen {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Clone the popup before the match statement to avoid multiple mutable borrows
+        let popup_clone = self.popup.clone();
+        
+        match &mut self.screen {
             AppScreen::MainMenu => {
-                self.render_main_menu(ctx, _frame);
+                self.render_main_menu(ctx, frame);
             }
             AppScreen::TrainWithAi => {
-                self.render_train_with_ai(ctx, _frame);
+                self.render_train_with_ai(ctx, frame);
             }
-            AppScreen::History => {
-
+            AppScreen::History(HistoryScreenVariant::PastGameSelectionView) => {
+                self.render_past_game_selection_view(ctx, frame);
+            }
+            AppScreen::History(HistoryScreenVariant::GameAnalyzerView(data)) => {
+                // Clone the data to avoid the double borrow
+                let data_clone = data.clone();
+                self.render_analyzer_view(ctx, frame, &data_clone);
             }
             AppScreen::Multiplayer => {
 
@@ -68,8 +83,8 @@ impl eframe::App for MyApp {
 
             }
         } // end matchd
-        if let Some(popup) = self.popup.clone() {
-            self.popup_handler(&popup, ctx, _frame);
+        if let Some(popup) = popup_clone {
+            self.popup_handler(&popup, ctx, frame);
         }
         }
             

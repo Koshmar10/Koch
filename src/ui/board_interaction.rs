@@ -1,6 +1,8 @@
+use std::sync::mpsc;
+
 use eframe::egui::Response;
 
-use crate::{engine::{ChessPiece, PieceColor, PieceType}, game::{controller::GameMode, evaluator::EvalKind, stockfish_engine::{StockfishCmd, StockfishResult}}, ui::app::{MyApp, PopupType}};
+use crate::{engine::{board::MoveInfo, ChessPiece, PieceType}, game::{controller::GameMode, evaluator::{EvalKind, EvalResponse}, stockfish_engine::{StockfishCmd, StockfishResult}}, ui::app::{MyApp, PopupType}};
 
 
 impl MyApp{
@@ -30,8 +32,8 @@ impl MyApp{
                                             Err(e) => {
                                                 println!("cannot move");
                                             }
-                                            _ => {
-                                                self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
+                                            Ok(move_ctx) => {
+                                                self.after_move_logic(&move_ctx);
                                             }
                                         }
                                     
@@ -63,9 +65,8 @@ impl MyApp{
                             Some(piece) => {
                                 if piece.color !=  selected_piece.color {
                                     match self.board.move_piece(selected_piece.position, piece.position){
-                                        Ok(_) => { 
-                                            self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
-                                            println!("Ok");}
+                                    Ok(move_ctx) => { 
+                                        self.after_move_logic(&move_ctx);println!("Ok");}
                                         Err(_) => {
                                             println!("Not Ok");
                                         }
@@ -105,8 +106,8 @@ impl MyApp{
                             }
                             None => {
                                 match self.board.move_piece(selected_piece.position, *poz){
-                                    Ok(_) => { 
-                                        self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
+                                    Ok(move_ctx) => { 
+                                        self.after_move_logic(&move_ctx);
                                         println!("Ok");}
                                     Err(_) => {
                                         println!("Not Ok");
@@ -173,8 +174,9 @@ impl MyApp{
                         Some(piece) => {
                             if piece.color !=  selected_piece.color {
                                 match self.board.move_piece(selected_piece.position, piece.position){
-                                    Ok(_) => { 
-                                        self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
+                                    Ok(move_ctx) => { 
+         
+                                        self.after_move_logic(&move_ctx);
                                         println!("Ok");}
                                     Err(_) => {
                                         println!("Not Ok");
@@ -210,8 +212,8 @@ impl MyApp{
                         }
                         None => {
                             match self.board.move_piece(selected_piece.position, *poz){
-                                Ok(_) => { 
-                                    self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
+                                Ok(move_ctx) => { 
+                                    self.after_move_logic(&move_ctx);
                                     println!("Ok");}
                                 Err(_) => {
                                     println!("Not Ok");
@@ -242,5 +244,24 @@ impl MyApp{
         _ => {}
     }
     
+}
+pub fn after_move_logic(&mut self, move_ctx: &MoveInfo) {
+    self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
+    let (tx, rx) = mpsc::channel::<EvalResponse>();
+    self.board.change_turn();
+    self.evaluator.send_eval_request(self.board.to_string(), EvalKind::MoveEval { reply_to: tx });
+    self.board.change_turn(); 
+    match rx.recv() {
+        Ok(res) => {
+
+            self.board.record_move(move_ctx.old_pos, move_ctx.new_pos, move_ctx.promotion, move_ctx.is_capture, res.value);
+        }
+        Err(e) => {}
+    }
+    // Print all recorded moves
+    println!("All recorded moves:");
+    for (i, move_record) in self.board.meta_data.move_list.iter().enumerate() {
+        println!("Move {}: {}", i + 1, move_record.uci);
+    }
 }
 }

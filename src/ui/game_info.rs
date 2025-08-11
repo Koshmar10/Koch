@@ -46,14 +46,14 @@ impl MyApp {
         }
         ui.painter().image(
             self.theme.white_pfp.as_ref().unwrap_or(&self.theme.empty_texture).id(), white_player_pfp, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-        let against: &str = "Stockfish";
+        
         ui.allocate_new_ui(UiBuilder::new().max_rect(white_player_label), |ui| {
             ui.style_mut().text_styles.insert(
                 egui::TextStyle::Body,
                 egui::FontId::new(16.0, egui::FontFamily::Proportional)
             );
             ui.horizontal_centered(|ui| {
-                ui.label(format!("{}({})", against, STOCKFISH_ELO));
+                ui.label(format!("{}({})", self.board.meta_data.white_player_name, self.board.meta_data.white_player_elo));
             });
         });
             ui.allocate_new_ui(UiBuilder::new().max_rect(white_box), |ui| {
@@ -167,7 +167,7 @@ impl MyApp {
                     egui::FontId::new(16.0, egui::FontFamily::Proportional)
                 );
                 ui.horizontal_centered(|ui| {
-                    ui.label(format!("Player(???)"));
+                    ui.label(format!("{}({})", self.board.meta_data.black_player_name, self.board.meta_data.black_player_elo));
                 });
             });
 

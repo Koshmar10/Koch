@@ -2,7 +2,7 @@ use std::{sync::{ mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread, time::Dur
 
 use stockfish::Stockfish;
 
-use crate::{etc::STOCKFISH_ELO, ui::app::MyApp};
+use crate::ui::app::MyApp;
 
 pub enum StockfishCmd {
     NewGame,
@@ -128,7 +128,7 @@ impl MyApp{
         
     }
     pub fn get_stockfish_move(&self) -> Option<String>{
-        let mut uci_move = String::new();
+        let uci_move = String::new();
         
         match &self.game.stockfish_tx {
             Some(tx) =>{

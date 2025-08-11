@@ -1,7 +1,7 @@
 use eframe::egui;
 
-use crate::{engine::Board, ui::{app::{MyApp, PopupType}, DEFAULT_FEN}};
-
+use crate::{database::create::insert_game_into_db, engine::Board, ui::{app::{MyApp, PopupType}, DEFAULT_FEN}};
+use crate::database::create;
 
 
 impl MyApp {
@@ -19,6 +19,14 @@ impl MyApp {
                                         self.popup = None;
                                         self.board = Board::from(&DEFAULT_FEN.to_owned());
                                         self.game.game_over = true;
+                                    }
+                                    let mut saved = false;
+                                    if ui.button("save game").clicked() {
+                                        if !saved {
+                                            let res =insert_game_into_db(&self.board.meta_data);
+                                            println!("{:?}", res);
+                                        }
+                                        saved = true; 
                                     }
                                 });
                             });

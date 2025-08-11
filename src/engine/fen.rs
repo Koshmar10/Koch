@@ -1,4 +1,3 @@
-use std::fs::Metadata;
 
 use crate::engine::{board::{BoardMetaData, BoardState}, Board, ChessPiece, PieceColor, PieceType};
 
@@ -23,7 +22,7 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError>{
         let mut j: u8 =0;
         for elem in file.chars(){
             if elem.is_numeric(){
-                j+=(elem.to_digit(10).unwrap() as u8);
+                j+=elem.to_digit(10).unwrap() as u8;
 
             }
             else{
@@ -40,7 +39,7 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError>{
                     'K' => {(PieceType::King, PieceColor::White, (i, j), 0)}
                     'Q' => {(PieceType::Queen, PieceColor::White, (i, j), 0)}
                     'P' => {(PieceType::Pawn, PieceColor::White, (i, j), 0)}
-                    (c) => return Err(FenError::InvalidChar(c))
+                    c => return Err(FenError::InvalidChar(c))
                 };
                 pieces.push(
                     ChessPiece { 

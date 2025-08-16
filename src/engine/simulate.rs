@@ -1,16 +1,20 @@
 use crate::engine::{Board, ChessPiece, PieceColor, PieceType};
 
 impl Board{
-    pub fn simulate_move(& self, piece: &ChessPiece, new_pos: &(u8, u8)) -> bool {
+    pub fn simulate_move(&self, piece: &ChessPiece, new_pos: &(u8, u8)) -> bool {
+        // Clone the board to simulate the move
         let old_pos = piece.position;
         let mut board = self.clone();
+
+        // Make the move on the cloned board
         board.squares[old_pos.0 as usize][old_pos.1 as usize] = None;
-        board.squares[new_pos.0 as usize][new_pos.1 as usize] = Some(*piece);
-        let res = board.is_in_check(piece.color);
-        board.squares[old_pos.0 as usize][old_pos.1 as usize] = Some(*piece);
-        board.squares[new_pos.0 as usize][new_pos.1 as usize] = None;
-        return res;
-        
+        // Create a new piece with updated position for accurate checking
+        let mut moved_piece = *piece;
+        moved_piece.position = *new_pos;
+        board.squares[new_pos.0 as usize][new_pos.1 as usize] = Some(moved_piece);
+
+        // Check if the king would NOT be in check after this move
+        !board.is_in_check(piece.color)
      }
     pub fn is_in_check(&self, color: PieceColor) -> bool {
         // Find king position

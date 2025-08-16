@@ -1,5 +1,5 @@
 
-use crate::engine::{board::{BoardMetaData, BoardState}, Board, ChessPiece, PieceColor, PieceType};
+use crate::engine::{board::{BoardMetaData, BoardUi}, Board, ChessPiece, PieceColor, PieceType};
 
 pub enum FenError{
     InvalidChar(char)
@@ -18,6 +18,7 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError>{
     let fullmove_number: u32    = parts[5].parse().unwrap();
     let fen_files : Vec<&str> = board_representation.split("/").collect();
     let mut i: u8 = 0;
+    let mut next_id = 0;
     for file in fen_files {
         let mut j: u8 =0;
         for elem in file.chars(){
@@ -42,12 +43,14 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError>{
                     c => return Err(FenError::InvalidChar(c))
                 };
                 pieces.push(
-                    ChessPiece { 
+                    ChessPiece {
+                        id: next_id, 
                         kind, 
                         color, 
                         position: pos, 
-                        times_moved: move_count }
+                        has_moved : false }
                 );
+                next_id+=1;
                 j+=1;
             }
         }
@@ -80,8 +83,12 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError>{
         halfmove_clock,
         fullmove_number,
         en_passant_target: en_passant_target,
-        state: BoardState::default(),
+        ui: BoardUi::default(),
         meta_data: BoardMetaData::default(),
+        move_cache: std::collections::HashMap::new(),
+        been_modified: true,
+        next_id,
+        ply_count:0
     })
 }
 

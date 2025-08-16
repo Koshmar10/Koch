@@ -1,4 +1,4 @@
-use crate::engine::{board::CastleType, Board, ChessPiece, PieceColor, PieceType};
+use crate::engine::{board::{CastleType, PieceMoves}, Board, ChessPiece, PieceColor, PieceType};
 
 
 pub enum VerticalDirection {Up, Down}
@@ -62,7 +62,7 @@ impl Board{
                 all_moves
             }
             PieceType::Pawn => {
-                let dep = if piece.times_moved ==0 {2} else {1};
+                let dep = if !piece.has_moved {2} else {1};
                 all_moves.extend(self.get_file_moves(piece, dep, VerticalDirection::Up));
                 for h in [(VerticalDirection::Up,HorizontalDirection::Left),
                 (VerticalDirection::Up,HorizontalDirection::Right)] {
@@ -73,13 +73,8 @@ impl Board{
             
         }
     }
-    pub fn set_legal_moves(&mut self, piece: &ChessPiece){
-        let (quiet, captures) = self.get_legal_moves(piece);
-        self.state.quiet_moves = Some(quiet);
-        self.state.capture_moves = Some(captures);
-    }
 
-    pub fn get_legal_moves(&mut self, piece: &ChessPiece) -> (Vec<(u8, u8)>, Vec<(u8, u8)>) {
+    pub fn get_legal_moves(&self, piece: &ChessPiece) -> (Vec<(u8, u8)>, Vec<(u8, u8)>) {
         let moves = self.get_all_moves(piece);
         
         let quiet = self.filter_quiet_moves(piece, &moves);
@@ -238,10 +233,6 @@ impl Board{
                 // Pawns attack diagonally - use directions with POV logic
                 let mut direction = if piece.color == PieceColor::White { 1 } else { -1 };
                 
-                // Apply POV logic
-                if piece.color != self.state.pov {
-                    direction *= -1;
-                }
                 
                 let attack_rank = r + direction;
                 
@@ -261,65 +252,31 @@ impl Board{
             }
             }
         }
-        pub fn can_castle(&self, castle_side: CastleType, color: PieceColor) -> bool{
-            //first we check if pieces are in designated position 
-            let (rook_pos, king_pos) = match castle_side {
-                CastleType::KingSide => {
-                    match color{
-                        PieceColor::Black => {
-                            if !self.black_small_castle { return false;}
-                            ((0, 7), (0,4))
-                        }
-                        PieceColor::White =>{
-                            if !self.white_small_castle { return false;}
-                            
-                            ((7, 7), (7, 4))
-                        }
-                    }        }
-                CastleType::QueenSide => {
-                    match color{
-                        PieceColor::Black => {
-                            if !self.black_big_castle { return false;}
-                            
-                            ((0,0), (0, 4))
-                        }
-                        PieceColor::White =>{
-                            if !self.white_big_castle { return false;}
-                            
-                            ((7, 7), (7, 4))
-                        }
+        
+        pub fn rerender_move_cache(&mut self){
+    let squares = &self.squares;
+    for rank in squares{
+        for piece in rank {
+            match piece {
+                Some(piece) => {
+                    // get_legal_moves returns (quiet, captures)
+                    let (quiet_moves, capture_moves) = self.get_legal_moves(&piece);
+                    if let Some(pm) = self.move_cache.get_mut(&piece.id) {
+                        pm.quiet_moves = quiet_moves;
+                        pm.capture_moves = capture_moves;
+                    } else {
+                        self.move_cache.insert(
+                            piece.id,
+                            PieceMoves{
+                                quiet_moves,
+                                capture_moves,
+                            }
+                        );
                     }
                 }
-            };
-            let (way, travel)  =match castle_side {
-                CastleType::KingSide => {
-                    (HorizontalDirection::Right, 2)
-                }
-                CastleType::QueenSide => {
-                    (HorizontalDirection::Left, 3)
-                }
-            };
-            let king = match self.squares[king_pos.0 as usize][king_pos.1 as usize] {
-                Some(piece) => {
-                if piece.times_moved == 0 { piece } else { return false; }
-                }
-                None => { return false; }
-            };
-            let rook = match self.squares[rook_pos.0 as usize][rook_pos.1 as usize] {
-                Some(piece) => {
-                if piece.times_moved == 0 { piece } else { return false; }
-                }
-                None => { return false; }
-            };
-            let travel_squares = self.get_rank_moves(&king, travel, way);
-            for sqaure in travel_squares{
-                match self.squares[sqaure.0 as usize][sqaure.1 as usize] {
-                    Some(_) => return false,
-                    None=> {
-                        if self.simulate_move(&king, &sqaure) {return false;}
-                    }
-                }
+                None => {}
             }
-            true
         }
+    }
+}
 }

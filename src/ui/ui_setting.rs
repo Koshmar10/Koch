@@ -1,3 +1,5 @@
+use std::sync::mpsc::Receiver;
+
 use eframe::egui::Color32;
 
 pub struct UiSettings {
@@ -9,6 +11,19 @@ pub struct UiSettings {
     pub menu_quote: Option<String>,
     pub default_subtitle:String,
     pub padding: u32,
+}
+pub struct UiController {
+    pub saving_game: bool,
+    pub save_game_rx: Option<Receiver<u8>>,
+}
+
+impl Default for UiController {
+    fn default() -> Self {
+        Self {
+            save_game_rx: None,
+            saving_game: false,
+        }
+    }
 }
 impl Default for  UiSettings {
     fn default() -> Self {

@@ -15,7 +15,7 @@ pub struct Quote {
 impl MyApp {
     pub fn get_quote(&self) -> String {
         
-        let default = self.ui.default_subtitle.clone();
+        let default = self.ui_settings.default_subtitle.clone();
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         // join our relative asset path to it:
         let full_path = Path::new(manifest_dir).join("assets/qoutes/qoutes.json");

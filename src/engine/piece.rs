@@ -14,19 +14,21 @@ pub enum PieceColor{
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ChessPiece {
+    pub id: u32,
     pub kind: PieceType,
     pub color: PieceColor,
     pub position: (u8, u8),
-    pub times_moved: i32,
+    pub has_moved: bool
 }
 
 impl Default for ChessPiece {
     fn default() -> Self {
         Self {
+            id : 0,
             kind: PieceType::Pawn,
             color: PieceColor::Black,
             position: (0, 0),
-            times_moved: 0,
+            has_moved: false,
         }
     }
 }

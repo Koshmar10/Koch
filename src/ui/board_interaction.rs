@@ -1,50 +1,19 @@
 use std::sync::mpsc;
 
-use eframe::egui::Response;
+use eframe::egui::{self, Response};
 
-use crate::{engine::{board::MoveInfo, ChessPiece, PieceType}, game::{controller::GameMode, evaluator::{EvalKind, EvalResponse}, stockfish_engine::{StockfishCmd, StockfishResult}}, ui::app::{MyApp, PopupType}};
+use crate::{engine::{board::{CastleType, MoveInfo, MoveStruct}, ChessPiece, PieceType}, game::{controller::GameMode, evaluator::{EvalKind, EvalResponse}, stockfish_engine::{StockfishCmd, StockfishResult}}, ui::app::{MyApp, PopupType}};
 
 
 impl MyApp{
-    pub fn handle_board_interaction_logic(&mut self,  piece: &Option<ChessPiece>, poz :&(u8, u8), response :&Response) {
+    pub fn handle_board_interaction_logic(&mut self,  square :&(u8, u8), response :&Response, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let _ = ctx;
     match self.game.mode {
         GameMode::PvE => {
-            // start stockfish
-            
             if !self.game.game_over{
                 if self.game.player != self.board.turn
                 {
-                if !self.game.stockfish_move_pending {
-                    self.game.stockfish_move_pending = true; // Mark move in progress
-                    // send UCI "go" command to Stockfish
-                    if let Some(tx) = &self.game.stockfish_tx {
-                        let _ = tx.send(StockfishCmd::Go(self.board.to_string()));
-                    }
-                } else {
-                    // try to receive Stockfish result and apply it
-                    if let Some(rx) = &self.game.stockfish_rx {
-                        if let Ok(StockfishResult::Move(mv)) = rx.try_recv() {
-                            println!("recived");
-                            println!("move {}", &mv);
-                            match self.board.decode_uci_move(mv) {
-                                Some((from, to)) => {
-                                        match self.board.move_piece(from, to){
-                                            Err(e) => {
-                                                println!("cannot move");
-                                            }
-                                            Ok(move_ctx) => {
-                                                self.after_move_logic(&move_ctx);
-                                            }
-                                        }
-                                    
-                                }
-                                None => {}
-                            }
-                            
-                            self.game.stockfish_move_pending = false;
-                        }
-                    }
-                }
+                    //wait for stockfish
                       
                 } else {
         
@@ -52,86 +21,101 @@ impl MyApp{
                         self.board.deselect_piece();
                     }
                 if response.clicked() {
-                if self.board.state.promtion_pending.is_some(){
+                    if self.board.ui.promtion_pending.is_some(){
                     //we need to handle promotion before doing anything lese
                     
-                    
-
                 } else {
-                match self.board.state.selected_piece {
-                    Some(selected_piece) => {
-                        //if a piece is already selected
-                        match piece {
-                            Some(piece) => {
-                                if piece.color !=  selected_piece.color {
-                                    match self.board.move_piece(selected_piece.position, piece.position){
-                                    Ok(move_ctx) => { 
-                                        self.after_move_logic(&move_ctx);println!("Ok");}
-                                        Err(_) => {
-                                            println!("Not Ok");
-                                        }
-                                    }
-                                    self.board.deselect_piece();
-                                }
-                                else{
-                                    if piece.color == self.board.turn{
-                                        if selected_piece.kind == PieceType::King && piece.kind == PieceType::Rook && !self.board.is_in_check(piece.color){
-                                            match &self.board.state.capture_moves{
-                                                Some(moves) => {
-                                                    if moves.contains(&piece.position){
-                                                        match self.board.execute_castle(selected_piece.position, piece.position){
-                                                            Ok(_) => {
-                                                                self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
-                                                            }
-                                                            _ => {}
-                                                        }
-                                                        self.board.deselect_piece();
-                                                       
-                                                    }
-                                                    else {
-                                                        self.board.select_piece(*piece);
-                                                    }
-                                                }
-                                                _=>{}
-                                            }
-                                        }else{
-                                            if self.game.player == piece.color{
-        
-                                                self.board.select_piece(*piece);
-                                            }
-                                        }
-                                        
-                                    }
-                                }
-                            }
-                            None => {
-                                match self.board.move_piece(selected_piece.position, *poz){
-                                    Ok(move_ctx) => { 
-                                        self.after_move_logic(&move_ctx);
-                                        println!("Ok");}
-                                    Err(_) => {
-                                        println!("Not Ok");
-                                    }
-                                }
-                                self.board.deselect_piece();
-                            }
-                            
+                    let old_piece: Option<ChessPiece> = self.board.ui.selected_piece;
+                let new_piece: Option<ChessPiece> = self.board.squares[square.0 as usize][square.1 as usize];
+                
+                let is_selected_piece: bool = old_piece.is_some();
+                let has_piece: bool = new_piece.is_some();
+                 //CASE 1: there is no selected piece so we must set the seleced piece to the square we interact with
+                if !is_selected_piece && has_piece {
+                    //get the piece from the square
+                    
+                    let piece: ChessPiece = self.board.squares[square.0 as usize][square.1 as usize].unwrap(); 
+                    self.board.select_piece(piece);
+                    
+                    //checking if the piece we try to select matches the player s turn
+                }
+                if !is_selected_piece && has_piece {
+                    //get the piece from the square
+                    if let Some(piece) = new_piece {
+                        //checking if the piece we try to select matches the player's turn
+                        if piece.color == self.board.turn {
+                            //We select the new piece
+                            self.board.select_piece(piece);   
                         }
                     }
-                    None => {
-                        //if piece not selected already select piece
-                        match piece {
-                            Some(piece) =>{
-                                if self.game.player == piece.color{
-                                    self.board.select_piece(*piece);
-                                }
+                }
+                if is_selected_piece && !has_piece {
+                    // movement performed
+                    if let Some(piece) = old_piece {
+                        if let Ok(mut ms) = self.board.move_piece(piece.position, *square) {
+                            // ensure UCI is set
+                            if ms.uci.is_empty() {
+                                ms.uci = self.board.encode_uci_move(piece.position, *square, None);
                             }
-                            None => {
-                                self.board.deselect_piece();
+                            // push the move now (don't wait for eval)
+                            self.board.meta_data.move_list.push(ms.clone());
+
+                            // optionally kick off eval (non-blocking)
+                            let (tx, rx) = mpsc::channel::<EvalResponse>();
+                            self.evaluator
+                                .send_eval_request(self.board.to_string(), EvalKind::MoveEval { reply_to: tx });
+                            // try to update evaluation if ready this frame
+                            if let Ok(resp) = rx.try_recv() {
+                                if let Some(last) = self.board.meta_data.move_list.last_mut() {
+                                    last.evaluation = resp;
+                                    self.board.ui.bar_eval = last.evaluation.value;
+                                }
                             }
                         }
                     }
                 }
+                if is_selected_piece && has_piece {
+                    //in this case we handle two cases
+                    //CASE 1: if the piece we are trying to select is of the same color as the already selected one 
+                    //we select it if it's not a castle 
+                    if let (Some(old), Some(new)) = (old_piece, new_piece) {
+                        if old.color == new.color {
+                            //check for rook special case
+                            //if castle possible we castle else just select it
+                            if new.kind == PieceType::Rook && old.kind == PieceType::King{
+                                let casteled = self.board.try_castle(old.position, new.position);
+                                
+                                if !casteled {self.board.select_piece(new);}
+                            } else {
+                                self.board.select_piece(new);
+                            }
+                        } 
+                        // In the branch where is_selected_piece && has_piece and colors differ (capture)
+                        else {
+                            if let Some(old) = old_piece {
+                                if let Ok(mut ms) = self.board.move_piece(old.position, *square) {
+                                    if ms.uci.is_empty() {
+                                        ms.uci = self.board.encode_uci_move(old.position, *square, None);
+                                    }
+                                    self.board.meta_data.move_list.push(ms.clone());
+
+                                    let (tx, rx) = mpsc::channel::<EvalResponse>();
+                                    self.evaluator
+                                        .send_eval_request(self.board.to_string(), EvalKind::MoveEval { reply_to: tx });
+                                    if let Ok(resp) = rx.try_recv() {
+                                        if let Some(last) = self.board.meta_data.move_list.last_mut() {
+                                            last.evaluation = resp;
+                                            self.board.ui.bar_eval = last.evaluation.value;
+                                        }
+                                    }
+                                }
+                            }
+                        }   
+                            }
+                        
+        
+                    }
+                
                 }   
                 }
                 }
@@ -156,112 +140,114 @@ impl MyApp{
                                 }
                             })
                         });
-                    self.board.state.checkmate_square = king_pos;
+                        self.board.ui.checkmate_square = king_pos;
                    
                 }
             }
             
+        
         }
         GameMode::Sandbox => {
+            //If we right click the selected piece loses focus
             if response.secondary_clicked() {
                 self.board.deselect_piece();
             }
             if response.clicked() {
-            match self.board.state.selected_piece {
-                Some(selected_piece) => {
-                    //if a piece is already selected
-                    match piece {
-                        Some(piece) => {
-                            if piece.color !=  selected_piece.color {
-                                match self.board.move_piece(selected_piece.position, piece.position){
-                                    Ok(move_ctx) => { 
-         
-                                        self.after_move_logic(&move_ctx);
-                                        println!("Ok");}
-                                    Err(_) => {
-                                        println!("Not Ok");
-                                    }
-                                }
-                                self.board.deselect_piece();
-                            }
-                            else{
-                                if piece.color == selected_piece.color{
-                                    if selected_piece.kind == PieceType::King && piece.kind == PieceType::Rook && !self.board.is_in_check(piece.color){
-                                        match &self.board.state.capture_moves{
-                                            Some(moves) => {
-                                                if moves.contains(&piece.position){
-                                                match self.board.execute_castle(selected_piece.position, piece.position){
-                                                    Ok(_) => {
-                                                        self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
-                                                    }
-                                                    _ => {}
-                                                }
-                                                self.board.deselect_piece();
-                                                }
-                                            }
-                                            _=>{}
-                                        }
+                //First we check if a piece is already selected
+                let old_piece: Option<ChessPiece> = self.board.ui.selected_piece;
+                let new_piece: Option<ChessPiece> = self.board.squares[square.0 as usize][square.1 as usize];
+             
+                let is_selected_piece: bool = old_piece.is_some();
+                let has_piece: bool = new_piece.is_some();
+                 //CASE 1: there is no selected piece so we must set the seleced piece to the square we interact with
+                if !is_selected_piece && has_piece {
+                    //get the piece from the square
+                    
+                    let piece: ChessPiece = self.board.squares[square.0 as usize][square.1 as usize].unwrap(); 
+                    self.board.select_piece(piece);
+                    
+                    //checking if the piece we try to select matches the player s turn
+                }
+                if !is_selected_piece && has_piece {
+                    //get the piece from the square
+                    if let Some(piece) = new_piece {
+                        //checking if the piece we try to select matches the player's turn
+                        if piece.color == self.board.turn {
+                            //We select the new piece
+                            self.board.select_piece(piece);   
+                        }
+                    }
+                }
+                if is_selected_piece && !has_piece { 
+                    //in this case a movement is performed
+                    if let Some(piece) = old_piece {
+                        if let Ok(mut ms) = self.board.move_piece(piece.position, *square){
+                              self.board.meta_data.move_list.push(ms);
 
-                                    }else{
-                                            self.board.select_piece(*piece);
-                                        
-                                    }
-                                    
-                                }
-                            }
-                        }
-                        None => {
-                            match self.board.move_piece(selected_piece.position, *poz){
-                                Ok(move_ctx) => { 
-                                    self.after_move_logic(&move_ctx);
-                                    println!("Ok");}
-                                Err(_) => {
-                                    println!("Not Ok");
-                                }
-                            }
-                            self.board.deselect_piece();
-                        }
                         
+                        };
                     }
                 }
-                None => {
-                    //if piece not selected already select piece
-                    match piece {
-                        Some(piece) =>{
-                            if piece.color == self.board.turn{
-                                self.board.select_piece(*piece);
+                if is_selected_piece && has_piece {
+                    //in this case we handle two cases
+                    //CASE 1: if the piece we are trying to select is of the same color as the already selected one 
+                    //we select it if it's not a castle 
+                    if let (Some(old), Some(new)) = (old_piece, new_piece) {
+                        if old.color == new.color {
+                            //check for rook special case
+                            //if castle possible we castle else just select it
+                            if new.kind == PieceType::Rook && old.kind == PieceType::King{
+                                let casteled = self.board.try_castle(old.position, new.position);
+                                
+                                if !casteled {self.board.select_piece(new);}
+                            } else {
+                                self.board.select_piece(new);
                             }
-                            
+                        } 
+                        else {
+                            if let Some(piece) = old_piece {
+                        if let Ok(mut ms) = self.board.move_piece(piece.position, *square){
+                          self.board.meta_data.move_list.push(ms);
+
+                        };
+                    }
+                            }   
+                            }
+                        
+        
+                    }
+
+                }
+                
+            }
+            _ => {}
+        }
+        }
+        
+        pub fn poll_stockfish(&mut self, fen: String) {
+            if !matches!(self.game.mode, GameMode::PvE) || self.game.game_over {
+                return;
+            }
+            if self.game.player != self.board.turn {
+                if !self.game.stockfish_move_pending {
+                    self.game.stockfish_move_pending = true;
+                    if let Some(tx) = &self.game.stockfish_tx {
+                        let _ = tx.send(StockfishCmd::Go(fen));
+                    }
+                } else if let Some(rx) = &self.game.stockfish_rx {
+                    if let Ok(StockfishResult::Move(mv)) = rx.try_recv() {
+                        if let Some((from, to)) = self.board.decode_uci_move(mv.clone()) {
+                            if let Ok(mut ms) = self.board.move_piece(from, to) {
+                                // set UCI from engine reply
+                                ms.uci = mv;
+                                self.board.meta_data.move_list.push(ms);
+                            }
                         }
-                        None => {
-                            self.board.deselect_piece();
-                        }
+                        self.game.stockfish_move_pending = false;
                     }
                 }
             }
-            }
-        }   
-        _ => {}
-    }
-    
-}
-pub fn after_move_logic(&mut self, move_ctx: &MoveInfo) {
-    self.evaluator.send_eval_request(self.board.to_string(), EvalKind::BarEval);
-    let (tx, rx) = mpsc::channel::<EvalResponse>();
-    self.board.change_turn();
-    self.evaluator.send_eval_request(self.board.to_string(), EvalKind::MoveEval { reply_to: tx });
-    self.board.change_turn(); 
-    match rx.recv() {
-        Ok(res) => {
-
-            self.board.record_move(move_ctx.old_pos, move_ctx.new_pos, move_ctx.promotion, move_ctx.is_capture, res.value);
         }
-        Err(e) => {}
-    }
-    // Print all recorded moves
-    println!("All recorded moves:");
-    for (i, move_record) in self.board.meta_data.move_list.iter().enumerate() {
-        println!("Move {}: {}", i + 1, move_record.uci);
-    }
-}
-}
+
+            }
+

@@ -44,7 +44,7 @@ impl Board{
             self.promote_pawn(to, promotion_piece);
             
             // Mark that promotion is handled
-            self.state.promtion_pending = None;
+            self.ui.promtion_pending = None;
             
             return Some((from, to));
         }
@@ -54,25 +54,25 @@ impl Board{
             "e1g1" => {
                 let king_pos = (7, 4);
                 let rook_pos = (7, 7);
-                self.execute_castle(king_pos, rook_pos);
+                //self.execute_castle(king_pos, rook_pos);
                 None
             }
             "e1c1" => {
                 let king_pos = (7, 4);
                 let rook_pos = (7, 0);
-                self.execute_castle(king_pos, rook_pos);
+                //self.execute_castle(king_pos, rook_pos);
                 None
             }
             "e8g8" => {
                 let king_pos = (0, 4);
                 let rook_pos = (0, 7);
-                self.execute_castle(king_pos, rook_pos);
+                //self.execute_castle(king_pos, rook_pos);
                 None
             }
             "e8c8" => {
                 let king_pos = (0, 4);
                 let rook_pos = (0, 0);
-                self.execute_castle(king_pos, rook_pos);
+                //self.execute_castle(king_pos, rook_pos);
                 None
             }
             // 3) Normal move (no changes needed)

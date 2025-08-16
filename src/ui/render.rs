@@ -1,25 +1,33 @@
-use eframe::egui::{pos2, vec2, Color32, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
+use eframe::egui::{self, pos2, vec2, Color32, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
 
-use crate::{engine::{ChessPiece, PieceColor}, ui::app::MyApp};
+use crate::{engine::{ChessPiece, PieceColor}, game::evaluator::EvalKind, ui::app::MyApp};
 
 impl MyApp{
 
-    pub fn render_board(&mut self, top_left: Pos2, ui: &mut Ui) {
+    pub fn render_board(&mut self, top_left: Pos2, ui: &mut Ui, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let avail = ui.available_size();
-        self.ui.square_size = (avail.x / 14.0).min(60.0);
-        let s = self.ui.square_size;
+        self.ui_settings.square_size = (avail.x / 14.0).min(60.0);
+        let s = self.ui_settings.square_size;
         let painter = ui.painter();
         
+        if self.board.been_modified {
+            self.board.rerender_move_cache();
+            self.board.been_modified = false;
+        }
         // iterate raw geometry 0..7
+        let fen = self.board.to_string();
+        self.poll_stockfish(fen.clone());   
+        self.board.ui.bar_eval = self.get_evaluation();
+
         for raw_rank in 0..8 {
             for raw_file in 0..8 {
                 // map raw -> board coords
-                let board_rank = if self.board.state.pov == PieceColor::Black {
+                let board_rank = if self.board.ui.pov == PieceColor::Black {
                     7 - raw_rank
                 } else {
                     raw_rank
                 };
-                let board_file = if self.board.state.pov == PieceColor::Black {
+                let board_file = if self.board.ui.pov == PieceColor::Black {
                 7 - raw_file
             } else {
                 raw_file
@@ -46,109 +54,103 @@ impl MyApp{
             painter.rect_filled(rect, 0.0, color);
             
             // pull the piece out of the mapped board cell
-            
             let piece = self.board.squares[board_rank][board_file];
             self.render_selected(&piece, &rect, painter);
             self.render_piece(&piece, &rect, &painter);
             self.render_quiet_move(&(board_rank as u8, board_file as u8), &rect, &painter);
             self.render_capture_move(&(board_rank as u8, board_file as u8), &rect, &painter);
             self.handle_board_interaction_logic(
-                &piece,
                 &(board_rank as u8, board_file as u8),
                 &response,
+                ctx, 
+                _frame
             );
         }
     }
+    // Only enqueue BarEval when not saving (avoid starving MoveEval)
+    if !self.ui_controller.saving_game {
+        self.evaluator.send_eval_request(fen.clone(), EvalKind::BarEval);
+    }
 }
+
 pub fn render_quiet_move(&self, poz :&(u8, u8), rect: &Rect, painter: &Painter){
-    match &self.board.state.quiet_moves {
-        Some(moves) => {
-            if moves.contains(poz) {
-                let center = rect.center();
-                let radius = self.ui.square_size * 0.225;
-                painter.circle_filled(center, radius, 
-                 if (poz.0 + poz.1) % 2 ==0 {self.theme.light_pseudo_move_highlight} else {self.theme.dark_pseudo_move_highlight});
+    match &self.board.ui.selected_piece{
+        Some(piece) => {
+            let moves = &self.board.move_cache.get(&piece.id);
+            match moves{
+                Some(moves) => {
+                    // use quiet_moves for quiet indicators
+                    if moves.quiet_moves.contains(poz) {
+                        let center = rect.center();
+                        let radius = self.ui_settings.square_size * 0.225;
+                        painter.circle_filled(
+                            center,
+                            radius, 
+                            if (poz.0 + poz.1) % 2 == 0 {
+                                self.theme.light_pseudo_move_highlight
+                            } else {
+                                self.theme.dark_pseudo_move_highlight
+                            }
+                        );
+                    } else { return; }
+                }
+                None => {}
             }
-            else {return;}
+        }
+        None => { return; }
+    }
+}
+pub fn render_capture_move(&self, poz :&(u8, u8), rect: &Rect, painter: &Painter){
+    match &self.board.ui.selected_piece{
+        Some(piece) => {
+            let moves = &self.board.move_cache.get(&piece.id);
+            match moves{
+                Some(moves) => {
+                    if moves.capture_moves.contains(poz) {
+                        let center = rect.center();
+                        let radius = self.ui_settings.square_size * 0.225;
+                        painter.circle_stroke(
+                            center,
+                            radius,
+                            Stroke::from((
+                                2.5,
+                                if (poz.0 + poz.1) % 2 == 0 {
+                                    self.theme.light_pseudo_move_highlight
+                                } else {
+                                    self.theme.dark_pseudo_move_highlight
+                                },
+                            )),
+                        );
+                    }
+                    else {return;}
+                }
+                None => {}
+            }
         }
         None => {return;}
     }
 }
-pub fn render_capture_move(&self, poz :&(u8, u8), rect: &Rect, painter: &Painter){
-        match &self.board.state.capture_moves {
-            Some(moves) => {
-                
-                if moves.contains(poz) {
-                                    let center = rect.center();
-                                    let radius = self.ui.square_size * 0.225;
-                                    painter.circle_stroke(
-                                        center,
-                                        radius,
-                                        Stroke::from((
-                                            2.5,
-                                            if (poz.0 + poz.1) % 2 == 0 {
-                                                self.theme.light_pseudo_move_highlight
-                                            } else {
-                                                self.theme.dark_pseudo_move_highlight
-                                            },
-                                        )),
-                                    );
-                                }
-                            
-                        }
-                        None => return,
-                    }
-                    
-                
-}
 pub fn render_selected(&self, piece: &Option<ChessPiece>, rect: &Rect, painter: &Painter){
     match piece {    
         Some(p) =>{
-            match self.board.state.selected_piece{
-                Some (selected_piece) => {
-
-                    if p.position == selected_piece.position {
-                        painter.rect_filled(*rect, 0.0, self.theme.square_select_highlight);
-                    }
-                    
-                }
-                None => {
-
+            if let Some(selected_piece) = self.board.ui.selected_piece {
+                if p.position == selected_piece.position {
+                    painter.rect_filled(*rect, 0.0, self.theme.square_select_highlight);
                 }
             }
-            match self.board.state.moved_from{
-                Some (pos) => {
 
-                    if p.position == pos {
-                        painter.rect_filled(*rect, 0.0, self.theme.moved_from_highlight.to_opaque());
-                    }
-                    
-                }
-                None => {
-
+            if let Some(pos) = self.board.ui.moved_piece {
+                if p.position == pos {
+                    painter.rect_filled(*rect, 0.0, self.theme.moved_from_highlight.to_opaque());
                 }
             }
-            match self.board.state.moved_to{
-                Some (pos) => {
 
-                    if p.position == pos {
-                        painter.rect_filled(*rect, 0.0, self.theme.moved_from_highlight);
-                    }
-                    
-                }
-                None => {
-
-                }
-            }
             // highlight king in check or checkmate
-            match self.board.state.checkmate_square {
-                Some(pos) => {
-                    if p.position == pos {
-                        painter.rect_filled(*rect, 0.0, self.theme.checkmate_square);
-                    }
+            if let Some(pos) = self.board.ui.checkmate_square {
+                if p.position == pos {
+                    painter.rect_filled(*rect, 0.0, self.theme.checkmate_square);
                 }
-                None => {}
-            } 
+            }
 
 
         }
@@ -189,49 +191,52 @@ pub fn render_piece(&self, piece: &Option<ChessPiece>, rect: &Rect, painter: &Pa
 pub fn render_eval_bar(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool){
     if !is_visible {return;}
     let painter = ui.painter();
-    let bar_height = 8.0 * self.ui.square_size;
+    let bar_height = 8.0 * self.ui_settings.square_size;
     let bar_width = 20.0;
 
     let bar_color = Color32::BLACK;
     let eval_color = Color32::WHITE;
 
-    let eval_x= top_left.x -20.0 - self.ui.padding as f32;
-    let mut eval_y = top_left.y;
-    
-    let mut eval_side: f32 =1.0;
-    
-    if self.board.state.pov != PieceColor::White {
-        eval_side*=-1.0;
-    }
-    
+    let eval_x = top_left.x - 20.0 - self.ui_settings.padding as f32;
 
-    let eval_height = bar_height/2.0 + (bar_height* eval_side*self.board.state.current_evaluation/1000.0).min(self.ui.square_size*3.0);
-    if self.board.state.pov == PieceColor::White {
-        eval_y = top_left.y + self.ui.square_size*8.0 - eval_height;
+    // POV-adjusted centipawns, clamped
+    let mut cp = self.board.ui.bar_eval;
+    if self.board.ui.pov == PieceColor::Black {
+        cp = -cp;
     }
-   
-    
-    
-    //base of the bar
+    let cp = cp.clamp(-1000.0, 1000.0); // -10 to +10 pawns
+
+    // Map [-1000..1000] to [-bar_height/2..bar_height/2]
+    let delta = (cp / 1000.0) * (bar_height / 2.0);
+    let eval_height = (bar_height / 2.0) + delta;
+
+    // For White POV, the white area grows from bottom; for Black, from top
+    let eval_y = if self.board.ui.pov == PieceColor::White {
+        top_left.y + bar_height - eval_height
+    } else {
+        top_left.y
+    };
+
+    // Base bar
     let bar_rect = Rect::from_min_size(
-        pos2(top_left.x - 20.0 - self.ui.padding as f32, top_left.y),
+        pos2(top_left.x - 20.0 - self.ui_settings.padding as f32, top_left.y),
         vec2(bar_width, bar_height),
     );
     painter.rect_filled(bar_rect, 5.0, bar_color);
-    //render the part that displays evaluation
-    //we assume that the white part always starts from the top
-    
-let eval_rect = Rect::from_min_size(
-        pos2(eval_x, eval_y),
-        vec2(20.0, eval_height),
-    );
+
+    // Eval fill
+    let eval_rect = Rect::from_min_size(pos2(eval_x, eval_y), vec2(bar_width, eval_height));
     painter.rect_filled(eval_rect, 5.0, eval_color);
+
+    // Midline
     painter.rect_filled(
         Rect::from_min_size(
-            pos2(top_left.x - 40.0 - self.ui.padding as f32, top_left.y+ bar_height/2.0),
+            pos2(top_left.x - 40.0 - self.ui_settings.padding as f32, top_left.y + bar_height/2.0),
             vec2(bar_width, bar_height/8.0),
-        ), 0.0, Color32::RED);
-    
+        ),
+        0.0,
+        Color32::RED,
+    );
 }
 pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool){
     if !is_visible {return;}
@@ -239,11 +244,11 @@ pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool)
     let test_moves = &self.board.meta_data.move_list;
       
     let painter = ui.painter();
-    let bar_height = self.ui.square_size * 8.0;
-    let bar_width = self.ui.square_size*2.0;
-    let pad = self.ui.padding as f32;
+    let bar_height = self.ui_settings.square_size * 8.0;
+    let bar_width = self.ui_settings.square_size*2.0;
+    let pad = self.ui_settings.padding as f32;
     let move_text_size = (bar_width * 0.15).min(12.0);
-    let (history_x, history_y) = (top_left.x + self.ui.square_size*8.0+pad, top_left.y);
+    let (history_x, history_y) = (top_left.x + self.ui_settings.square_size*8.0+pad, top_left.y);
     let rect = Rect::from_min_size(pos2(history_x, history_y), vec2(bar_width, bar_height));
     painter.rect_filled(rect, 0.0, Color32::BLACK);
     ui.allocate_new_ui(

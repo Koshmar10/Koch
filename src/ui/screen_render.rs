@@ -1,6 +1,6 @@
 use eframe::{egui::{self, vec2, Button, CentralPanel, Color32, CornerRadius, Frame, RichText, SidePanel, Stroke}, App};
 
-use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp}, DEFAULT_FEN}};
+use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp, PopupType}, DEFAULT_FEN}};
 use crate::engine::board::MoveStruct;
 
 
@@ -27,8 +27,8 @@ impl MyApp{
                     ui.add_space(ui.available_height()* 0.2);
                     let scale = if ui.available_width() < 400.0 { 0.8 } else { 1.0 };
                         ctx.request_repaint();
-                        let title_size = self.ui.title_size * scale;
-                        let subtitle_size = self.ui.subtitle_size * scale;
+                        let title_size = self.ui_settings.title_size * scale;
+                        let subtitle_size = self.ui_settings.subtitle_size * scale;
                     ui.vertical_centered(|ui| {
                         // Scale down to 80% if the available width is small
                        
@@ -44,10 +44,10 @@ impl MyApp{
 
                         // Subtitle: smaller & fainter
                         // Before calling ui.label, compute a dynamic size based on the quote’s length:
-                        let quote = match &self.ui.menu_quote {
+                        let quote = match &self.ui_settings.menu_quote {
                             None => {
-                                self.ui.menu_quote = Some(self.get_quote());
-                                self.ui.default_subtitle.clone()
+                                self.ui_settings.menu_quote = Some(self.get_quote());
+                                self.ui_settings.default_subtitle.clone()
                             }
                             Some(s) => s.clone(),
                         };
@@ -107,7 +107,7 @@ impl MyApp{
                 ui.label(&self.board.to_string());
                 ui.label(format!(
                     "piesa: {:?}",
-                    match self.board.state.selected_piece {
+                    match self.board.ui.selected_piece {
                         Some(p) => self.board.squares[p.position.0 as usize][p.position.1 as usize],
                         None => None,
                     }
@@ -123,12 +123,23 @@ impl MyApp{
                     self.screen = AppScreen::MainMenu;
                 }
                 if ui.button("flip").clicked() {
-                    self.board.state.pov = match self.board.state.pov {
+                    self.board.ui.pov = match self.board.ui.pov {
                         PieceColor::White => PieceColor::Black,
                         PieceColor::Black => PieceColor::White,
                     };
                     ctx.request_repaint();
                 };
+                if ui.button("save game").clicked() {
+                    self.popup = Some(PopupType::SavingGamePopup);
+                    self.start_save_game_sequence();
+                    self.board = Board::from(&DEFAULT_FEN.to_owned());
+                    self.game.game_over = true;
+                    if let Some(tx) = &self.game.stockfish_tx {
+                        if let Err(e) = tx.send(StockfishCmd::Stop) {
+                            eprintln!("failed to send `stop` to stockfish: {}", e);
+                        }
+                    }
+                }
                 if ui.button("reset-board").clicked() {
                     self.board = Board::from(&DEFAULT_FEN.to_owned());
                 };
@@ -165,8 +176,8 @@ impl MyApp{
                             
                             PieceColor::White},
                     };
-                    if self.board.state.pov != self.game.player {
-                        self.board.state.pov = match self.board.state.pov {
+                    if self.board.ui.pov != self.game.player {
+                        self.board.ui.pov = match self.board.ui.pov {
                             PieceColor::White => PieceColor::Black,
                             PieceColor::Black => PieceColor::White,
                         };
@@ -203,24 +214,8 @@ impl MyApp{
                     ui.label(format!("checkmate {:?}", mate));
 
                 });
-                ui.label(format!("{:?}", self.board.state.pov));
-                if let Some(quiet_moves) = &self.board.state.quiet_moves {
-                    ui.separator();
-                    ui.heading("Pseudo Moves:");
-                    
-                    for (row, col) in quiet_moves {
-                        ui.label(format!("({}, {})", row, col));
-                    }
-                    
-                }
-                if let Some(capture_moves) = &self.board.state.capture_moves {
-                   
-                    
-                    for (row, col) in capture_moves {
-                        ui.label(format!("({}, {})", row, col));
-                    }
-                    
-                }
+                ui.label(format!("{:?}", self.board.ui.pov));
+                
             
             });
             CentralPanel::default() .frame(
@@ -231,7 +226,7 @@ impl MyApp{
                     //UI SETUP
                     ui.spacing_mut().item_spacing= vec2(0.0, 0.0);
                     
-                    let board_size = &self.ui.square_size * 8.0;
+                    let board_size = &self.ui_settings.square_size * 8.0;
                     // Find top-left of centered board
                     let top_left = egui::pos2(
                         ui.min_rect().center().x - board_size / 2.0,
@@ -239,10 +234,11 @@ impl MyApp{
                     );
                     self.render_eval_bar(top_left, ui, true);
                     self.render_move_history(top_left, ui, true);
-                    self.render_board(top_left, ui);
+                    self.render_board(top_left, ui, ctx, _frame);
                     ctx.request_repaint();
                     self.render_game_info(top_left, ui);
-                    if let Some((new_pos, old_pos)) = self.board.state.promtion_pending {
+                    
+                    if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
                         egui::Window::new("Promote Pawn")
                             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                             .collapsible(false)
@@ -257,14 +253,29 @@ impl MyApp{
                                         PieceType::Rook,
                                     ] {
                                         if ui.button(kind.to_string()).clicked() {
-                                            self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
-                                            self.board.promote_pawn(new_pos, kind);
-                                            self.board.state.promtion_pending = None;
+                                            //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
+                                            self.board.promote_pawn((old_pos, new_pos), kind);
+                                             let last_move = self.board.meta_data.move_list.last_mut().unwrap();
+                                             last_move.promotion = Some(kind);
+                                            
+                                            match kind {
+                                                PieceType::Queen => last_move.uci.push('q'),
+                                                PieceType::Rook => last_move.uci.push('r'),
+                                                PieceType::Bishop => last_move.uci.push('b'),
+                                                PieceType::Knight => last_move.uci.push('n'),
+                                                _ => {}
+                                            }
+                                            
+                                            self.board.ui.promtion_pending = None;
                                             ctx.request_repaint();
                                         }
                                     }
                                 });
                             });
+                        }
+                    if let Some(popup) = &self.popup {
+                        self.poll_save_game_worker();
+                        ctx.request_repaint();
                     }
                     
 
@@ -276,7 +287,7 @@ impl MyApp{
         Err(e) => {println!("{}", e); Vec::new()},
        };
        
-       let pad = self.ui.padding as f32;
+       let pad = self.ui_settings.padding as f32;
        //get games TODO
        CentralPanel::default()
                 .frame(Frame::default().fill(Color32::BLACK))
@@ -315,7 +326,7 @@ impl MyApp{
                 });
     }
     pub fn render_analyzer_view(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, metadata: &BoardMetaData){
-        let pad = self.ui.padding;
+        let pad = self.ui_settings.padding;
         CentralPanel::default()
                 .frame(Frame::default().fill(Color32::BLACK))
                 .show(ctx, |ui| {
@@ -352,7 +363,7 @@ impl MyApp{
                                 // Adjust this based on how moves are stored in your BoardMetaData
                                 if !metadata.move_list.is_empty() {
                                     for (i, chess_move) in metadata.move_list.iter().enumerate() {
-                                        ui.label(RichText::new(format!("{:?}. {}", i+1, chess_move.uci)).size(14.0));
+                                        ui.label(RichText::new(format!("{:?}. {}, eval:{}{}", i+1, chess_move.uci, chess_move.evaluation.kind,chess_move.evaluation.value, )).size(14.0));
                                         ui.add_space(5.0);
                                     }
                                 } else {

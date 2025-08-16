@@ -1,6 +1,6 @@
 use eframe::{egui::{self}, CreationContext};
 
-use crate::{database::create::create_database, engine::{board::BoardMetaData, Board}, game::{controller::GameController, evaluator::Evaluator}, ui::{theme, ui_setting::UiSettings, DEFAULT_FEN}};
+use crate::{database::create::create_database, engine::{board::BoardMetaData, Board}, game::{controller::GameController, evaluator::Evaluator}, ui::{theme, ui_setting::{UiController, UiSettings}, DEFAULT_FEN}};
 
 pub enum HistoryScreenVariant { PastGameSelectionView, GameAnalyzerView(BoardMetaData)}
 pub enum AppScreen {
@@ -11,7 +11,7 @@ pub enum AppScreen {
     Analyze,
 }
 #[derive(Clone)]
-pub enum PopupType { GameLostPopup(String) }
+pub enum PopupType { GameLostPopup(String), SavingGamePopup }
 pub struct MyApp {
     pub screen: AppScreen,
     pub popup: Option<PopupType>,
@@ -20,7 +20,8 @@ pub struct MyApp {
     pub game: GameController,
     pub evaluator: Evaluator,
     pub past_games: Option<Vec<BoardMetaData>>,
-    pub ui: UiSettings,
+    pub ui_settings: UiSettings,
+    pub ui_controller: UiController,
 }
 
 
@@ -32,15 +33,15 @@ impl From<&CreationContext<'_>> for MyApp{
 
         let mut app = 
             Self {
-
                 screen: AppScreen::MainMenu,
                 popup: None,
                 theme: theme::ThemeLoader::from(cc),
-                board: Board::from(&DEFAULT_FEN.to_owned()),
+                board: Board::default(),
                 game: GameController::default(),
                 evaluator: Evaluator::new(),
                 past_games: None,
-                ui : UiSettings::default(),
+                ui_settings: UiSettings::default(),
+                ui_controller: UiController::default(),
                 
 
             };
@@ -72,7 +73,7 @@ impl eframe::App for MyApp {
                 self.render_past_game_selection_view(ctx, frame);
             }
             AppScreen::History(HistoryScreenVariant::GameAnalyzerView(data)) => {
-                // Clone the data to avoid the double borrow
+                // Clone the data to avoid multiple mutable borrows
                 let data_clone = data.clone();
                 self.render_analyzer_view(ctx, frame, &data_clone);
             }

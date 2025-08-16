@@ -1,7 +1,9 @@
 use std::sync::{mpsc::{Receiver, Sender}, Arc};
+use std::time::Duration;
 
 use eframe::egui::mutex::Mutex;
-use stockfish::Stockfish;
+use rusqlite::ToSql;
+use stockfish::{EvalType, Stockfish};
 
 use crate::{engine::PieceColor, ui::app::MyApp};
 
@@ -16,12 +18,39 @@ pub enum EvalKind {BarEval, MoveEval{ reply_to: Sender<EvalResponse>}}
 
 pub struct EvaluationRequest{
     pub position: String,
-    pub kind: EvalKind,
+    pub kind: EvalKind
 }
+#[derive(Clone)]
 pub struct EvalResponse {
     pub value:f32,
+    pub kind: EvalType,
 }
-
+impl EvalResponse {
+    // Convert EvalResponse to SQL-compatible values
+    pub fn to_sql_params(&self) -> (f32, String) {
+        let eval_type_str = match self.kind {
+            EvalType::Centipawn => "cp".to_string(),
+            EvalType::Mate => "mate".to_string(),
+            // Add other variants as needed
+            _ => "unknown".to_string(),
+        };
+        
+        (self.value, eval_type_str)
+    }
+    
+    // Create an EvalResponse from SQL-retrieved values
+    
+}
+pub fn from_sql_params(value: f32, eval_type_str: &str) -> EvalResponse {
+        let kind = match eval_type_str {
+            "cp" => EvalType::Centipawn,
+            "mate" => EvalType::Mate,
+            // Add other variants as needed
+            _ => EvalType::Centipawn,
+        };
+        
+        EvalResponse { value, kind }
+    }
 impl Default for EvaluatorQueue {
     fn default() -> Self {
         Self { eval_queue: vec![], eval_request_tx: None, eval_receiver_rx: None,}
@@ -81,77 +110,92 @@ impl MyApp {
         
         let _ = std::thread::Builder::new().name("evaluator_thread".to_string()).spawn(move || {
             let mut engine = stockfish_evaluator.lock();
-            let mut request_queue:Vec<EvaluationRequest> = Vec::new();
-            loop {
-                match eval_request_rx.recv() {
-                    Ok(fen) => {
-                        request_queue.push(fen);
-                    }
-                    Err(e) => {}//eprintln!("Line {}: {}", line!(), e), // Added line number
-                }
-                if !request_queue.is_empty(){
-                    let currrent_request = request_queue.remove(0);
-                    match engine.set_fen_position(&currrent_request.position) {
-                        Ok(_) => {}
-                        Err(e) => {}//eprintln!("Line {}: {}", line!(), e)  // Added line number
-                    }
-                    match currrent_request.kind {
-                        EvalKind::BarEval => {
-                            for i in [2,  10,  12]{
-                                engine.set_depth(i);
-                                
-                                match engine.go() {
-                                    Ok(output) => {
-                                        let eval = output.eval();
-                                        let eval_type = eval.eval_type();
-                                        println!("{eval_type}");
-                                        let _ = eval_receiver_tx.send(eval.value() as f32);
-                                    }
-                                    Err(e) => {}//eprintln!("Line {}: {}", line!(), e)  // Added line number
-                                }
-                            }
-                        }
-                        EvalKind::MoveEval { reply_to: sender } => {
 
-                                engine.set_depth(15);    
-                                match engine.go() {
-                                    Ok(output) => {
-                                        let eval = output.eval();
-                                        let eval_type = eval.eval_type();
-                                        println!("{eval_type}");
-                                        let _ = sender.send(EvalResponse { value: eval.value() as f32 });
-                                    }
-                                    Err(e) =>{}//eprintln!("Line {}: {}", line!(), e)  // Added line number
-                                };
-                            
+            use std::collections::VecDeque;
+
+            loop {
+                // Block briefly for the first request
+                let first = match eval_request_rx.recv_timeout(Duration::from_millis(5)) {
+                    Ok(req) => Some(req),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+
+                // Accumulate: keep only the latest BarEval; keep ALL MoveEval
+                let mut latest_bar: Option<String> = None;           // FEN
+                let mut move_reqs: VecDeque<EvaluationRequest> = VecDeque::new();
+
+                let mut push_req = |req: EvaluationRequest| {
+                    match req.kind {
+                        EvalKind::BarEval => {
+                            latest_bar = Some(req.position);
                         }
-                        
+                        EvalKind::MoveEval { reply_to } => {
+                            move_reqs.push_back(EvaluationRequest {
+                                position: req.position,
+                                kind: EvalKind::MoveEval { reply_to },
+                            });
+                        }
                     }
-                    
+                };
+
+                if let Some(req) = first { push_req(req); }
+                while let Ok(req) = eval_request_rx.try_recv() {
+                    push_req(req);
                 }
-               
-            
-        }});
-        
-        
-        
-    }
-    pub fn get_evaluation(&mut self) ->f32 {
-        let rx = match &self.evaluator.request_manager.eval_receiver_rx {
-            Some(rx) => rx,
-            None => return 0.0,
-        };
-        match rx.try_recv() {
-            Ok(eval) => {
-                println!("{eval}");
-                self.board.state.current_evaluation = eval;
-                return self.board.state.current_evaluation;
-            },   
-            Err(e) => {
-                return self.board.state.current_evaluation;
-         
+
+                // Process all MoveEval first; never drop them
+                while let Some(req) = move_reqs.pop_front() {
+                    let (pos, reply_to) = match req.kind {
+                        EvalKind::MoveEval { reply_to } => (req.position, reply_to),
+                        _ => unreachable!(),
+                    };
+
+                    if let Err(e) = engine.set_fen_position(&pos) {
+                        let _ = reply_to.send(EvalResponse { value: 0.0, kind: EvalType::Centipawn });
+                        eprintln!("{}:{} set_fen_position failed: {}", file!(), line!(), e);
+                        continue;
+                    }
+
+                    let _ = engine.set_depth(14);
+                    match engine.go() {
+                        Ok(output) => {
+                            let eval = output.eval();
+                            let kind = eval.eval_type();
+                            let value = eval.value() as f32;
+                            let _ = reply_to.send(EvalResponse { value, kind });
+                        }
+                        Err(e) => {
+                            eprintln!("{}:{} engine.go() failed: {}", file!(), line!(), e);
+                            let _ = reply_to.send(EvalResponse { value: 0.0, kind: EvalType::Centipawn });
+                        }
+                    }
+                }
+
+                // Then process the latest BarEval (optional UI-only)
+                if let Some(pos) = latest_bar {
+                    if engine.set_fen_position(&pos).is_ok() {
+                        let _ = engine.set_depth(15);
+                        if let Ok(output) = engine.go() {
+                            let eval = output.eval();
+                            let _ = eval_receiver_tx.send(eval.value() as f32);
+                        }
+                    }
+                }
             }
+        });
+    }
+    pub fn get_evaluation(&mut self) -> f32 {
+        let Some(rx) = &self.evaluator.request_manager.eval_receiver_rx else {
+            return self.board.ui.bar_eval;
+        };
+        // Drain to newest value this frame
+        let mut last = self.board.ui.bar_eval;
+        while let Ok(v) = rx.try_recv() {
+            last = v;
         }
+        self.board.ui.bar_eval = last;
+        last
     }
     
 }

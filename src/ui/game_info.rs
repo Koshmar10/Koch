@@ -2,10 +2,10 @@ use eframe::egui::{self, pos2, vec2, Color32, CornerRadius, Pos2, Rect, Stroke, 
 
 use crate::{engine::PieceType, etc::STOCKFISH_ELO, ui::app::MyApp};
 
-impl MyApp {
+impl MyApp{
     pub fn render_game_info(&mut self, top_left: Pos2, ui : &mut Ui) {
         
-        let unit =  &self.ui.square_size;
+        let unit =  &self.ui_settings.square_size;
         //settings
         let timer_size = Vec2::new(2.0*unit, *unit*2.0 /3.0);
         let pad = 12.0;
@@ -36,11 +36,11 @@ impl MyApp {
             Vec2::new(label_size*2.0, label_size/3.0));
 
         for &rect in &[white_box, black_box, white_player_pfp, white_player_label] {
-            ui.painter().rect_filled(rect, CornerRadius::same(4), self.ui.timer_inside);
+            ui.painter().rect_filled(rect, CornerRadius::same(4), self.ui_settings.timer_inside);
             ui.painter().rect_stroke(
                 rect,
                 CornerRadius::same(4),
-                Stroke::new(1.0, self.ui.timer_outside),
+                Stroke::new(1.0, self.ui_settings.timer_outside),
                 egui::StrokeKind::Outside
             );
         }
@@ -71,9 +71,9 @@ impl MyApp {
                 let max_piece_size = (white_player_pieces.height().min(white_player_pieces.width() / 4.0)) * 0.8 ; // Made 30% smaller
                 ui.horizontal_centered(|ui| {
 
-                    if !self.board.state.white_taken.is_empty() {
-                        self.board.state.white_taken.sort_by_key(|p| {
-                            match p.kind {
+                    if !self.board.ui.white_taken.is_empty() {
+                        self.board.ui.white_taken.sort_by_key(|p| {
+                            match p.0 {
                                 PieceType::Bishop => 31,
                                 PieceType::King => 120,
                                 PieceType::Knight => 30,
@@ -82,7 +82,7 @@ impl MyApp {
                                 PieceType::Rook => 50,
                             }
                         });
-                        for piece in &self.board.state.white_taken {
+                        for piece in &self.board.ui.white_taken {
 
                             let piece_rect = Rect::from_min_size(
                                 pos2(
@@ -93,7 +93,7 @@ impl MyApp {
                             );
                             
                         
-                        if let Some(texture) = self.theme.piece_map.get(&(piece.kind, piece.color)) {
+                        if let Some(texture) = self.theme.piece_map.get(&(piece.0, piece.1)) {
                             match texture {
                                 Ok(tex) => {
                                   
@@ -145,11 +145,11 @@ impl MyApp {
                 Vec2::new(label_size*2.0, label_size/3.0));
 
             for &rect in &[black_player_pfp, black_player_label] {
-                ui.painter().rect_filled(rect, CornerRadius::same(4), self.ui.timer_inside);
+                ui.painter().rect_filled(rect, CornerRadius::same(4), self.ui_settings.timer_inside);
                 ui.painter().rect_stroke(
                     rect,
                     CornerRadius::same(4),
-                    Stroke::new(1.0, self.ui.timer_outside),
+                    Stroke::new(1.0, self.ui_settings.timer_outside),
                     egui::StrokeKind::Outside
                 );
             }
@@ -176,9 +176,9 @@ impl MyApp {
                 let mut x_offset = 0.0;
                 let max_piece_size = (black_player_pieces.height().min(black_player_pieces.width() / 4.0)) * 0.8;
                 ui.horizontal_centered(|ui| {
-                    if !self.board.state.black_taken.is_empty() {
-                        self.board.state.black_taken.sort_by_key(|p| {
-                            match p.kind {
+                    if !self.board.ui.black_taken.is_empty() {
+                        self.board.ui.black_taken.sort_by_key(|p| {
+                            match p.0 {
                                 PieceType::Bishop => 31,
                                 PieceType::King => 120,
                                 PieceType::Knight => 30,
@@ -187,7 +187,7 @@ impl MyApp {
                                 PieceType::Rook => 50,
                             }
                         });
-                        for piece in &self.board.state.black_taken {
+                        for piece in &self.board.ui.black_taken {
                             let piece_rect = Rect::from_min_size(
                                 pos2(
                                     initial_render_position.x + x_offset, 
@@ -196,7 +196,7 @@ impl MyApp {
                                 vec2(max_piece_size, max_piece_size)
                             );
                         
-                            if let Some(texture) = self.theme.piece_map.get(&(piece.kind, piece.color)) {
+                            if let Some(texture) = self.theme.piece_map.get(&(piece.0, piece.1)) {
                                 match texture {
                                     Ok(tex) => {
                                         ui.painter().image(

@@ -6,8 +6,7 @@ use crate::{engine::{board::{CastleType, MoveInfo, MoveStruct}, ChessPiece, Piec
 
 
 impl MyApp{
-    pub fn handle_board_interaction_logic(&mut self,  square :&(u8, u8), response :&Response, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let _ = ctx;
+    pub fn handle_board_interaction_logic(&mut self,  square :&(u8, u8), response :&Response) {
     match self.game.mode {
         GameMode::PvE => {
             if !self.game.game_over{

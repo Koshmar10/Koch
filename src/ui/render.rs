@@ -1,10 +1,52 @@
-use eframe::egui::{self, pos2, vec2, Color32, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
+use eframe::egui::{self, pos2, vec2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
 
-use crate::{engine::{ChessPiece, PieceColor}, game::evaluator::EvalKind, ui::app::MyApp};
+use crate::{engine::{ChessPiece, PieceColor, PieceType}, game::evaluator::EvalKind, ui::app::MyApp};
 
 impl MyApp{
-
-    pub fn render_board(&mut self, top_left: Pos2, ui: &mut Ui, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    pub fn render_board_layout(&mut self, top_left: Pos2, ui: &mut Ui, ctx:&Context ){
+        self.render_eval_bar(top_left, ui, true);
+        self.render_move_history(top_left, ui, true);
+        self.render_board(top_left, ui);
+        ctx.request_repaint();
+        self.render_game_info(top_left, ui);
+        
+        if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
+            egui::Window::new("Promote Pawn")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label("Choose piece to promote to:");
+                        for kind in [
+                            PieceType::Bishop,
+                            PieceType::Knight,
+                            PieceType::Queen,
+                            PieceType::Rook,
+                        ] {
+                            if ui.button(kind.to_string()).clicked() {
+                                //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
+                                self.board.promote_pawn((old_pos, new_pos), kind);
+                                let last_move = self.board.meta_data.move_list.last_mut().unwrap();
+                                last_move.promotion = Some(kind);
+                                
+                                match kind {
+                                    PieceType::Queen => last_move.uci.push('q'),
+                                    PieceType::Rook => last_move.uci.push('r'),
+                                    PieceType::Bishop => last_move.uci.push('b'),
+                                    PieceType::Knight => last_move.uci.push('n'),
+                                    _ => {}
+                                }
+                                
+                                self.board.ui.promtion_pending = None;
+                                
+                            }
+                        }
+                    });
+                });
+            }
+    }
+    pub fn render_board(&mut self, top_left: Pos2, ui: &mut Ui) {
         let avail = ui.available_size();
         self.ui_settings.square_size = (avail.x / 14.0).min(60.0);
         let s = self.ui_settings.square_size;
@@ -61,10 +103,7 @@ impl MyApp{
             self.render_capture_move(&(board_rank as u8, board_file as u8), &rect, &painter);
             self.handle_board_interaction_logic(
                 &(board_rank as u8, board_file as u8),
-                &response,
-                ctx, 
-                _frame
-            );
+                &response);
         }
     }
     // Only enqueue BarEval when not saving (avoid starving MoveEval)

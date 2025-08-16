@@ -232,47 +232,9 @@ impl MyApp{
                         ui.min_rect().center().x - board_size / 2.0,
                         ui.min_rect().center().y - board_size / 2.0,
                     );
-                    self.render_eval_bar(top_left, ui, true);
-                    self.render_move_history(top_left, ui, true);
-                    self.render_board(top_left, ui, ctx, _frame);
-                    ctx.request_repaint();
-                    self.render_game_info(top_left, ui);
+                    self.render_board_layout(top_left, ui, ctx);
                     
-                    if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
-                        egui::Window::new("Promote Pawn")
-                            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                            .collapsible(false)
-                            .resizable(false)
-                            .show(ctx, |ui| {
-                                ui.vertical_centered(|ui| {
-                                    ui.label("Choose piece to promote to:");
-                                    for kind in [
-                                        PieceType::Bishop,
-                                        PieceType::Knight,
-                                        PieceType::Queen,
-                                        PieceType::Rook,
-                                    ] {
-                                        if ui.button(kind.to_string()).clicked() {
-                                            //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
-                                            self.board.promote_pawn((old_pos, new_pos), kind);
-                                             let last_move = self.board.meta_data.move_list.last_mut().unwrap();
-                                             last_move.promotion = Some(kind);
-                                            
-                                            match kind {
-                                                PieceType::Queen => last_move.uci.push('q'),
-                                                PieceType::Rook => last_move.uci.push('r'),
-                                                PieceType::Bishop => last_move.uci.push('b'),
-                                                PieceType::Knight => last_move.uci.push('n'),
-                                                _ => {}
-                                            }
-                                            
-                                            self.board.ui.promtion_pending = None;
-                                            ctx.request_repaint();
-                                        }
-                                    }
-                                });
-                            });
-                        }
+                    ctx.request_repaint();
                     if let Some(popup) = &self.popup {
                         self.poll_save_game_worker();
                         ctx.request_repaint();

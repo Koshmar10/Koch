@@ -1,50 +1,112 @@
-use eframe::egui::{self, pos2, vec2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder};
-
+use eframe::egui::{self, menu, pos2, vec2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder};
+use rand::rngs::SmallRng;
+use egui_plot::{Line, Plot, PlotPoints};
 use crate::{engine::{ChessPiece, PieceColor, PieceType}, game::evaluator::EvalKind, ui::app::MyApp};
 
+#[derive(Clone)]
+pub enum BoardLayout {SandboxLayout, VersusLayout, AnalyzerLayout}
+
 impl MyApp{
-    pub fn render_board_layout(&mut self, top_left: Pos2, ui: &mut Ui, ctx:&Context ){
-        self.render_eval_bar(top_left, ui, true);
-        self.render_move_history(top_left, ui, true);
-        self.render_board(top_left, ui);
-        ctx.request_repaint();
-        self.render_game_info(top_left, ui);
+    pub fn render_board_layout(&mut self, top_left: Pos2, ui: &mut Ui, ctx:&Context, layout: BoardLayout){
         
-        if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
-            egui::Window::new("Promote Pawn")
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label("Choose piece to promote to:");
-                        for kind in [
-                            PieceType::Bishop,
-                            PieceType::Knight,
-                            PieceType::Queen,
-                            PieceType::Rook,
-                        ] {
-                            if ui.button(kind.to_string()).clicked() {
-                                //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
-                                self.board.promote_pawn((old_pos, new_pos), kind);
-                                let last_move = self.board.meta_data.move_list.last_mut().unwrap();
-                                last_move.promotion = Some(kind);
-                                
-                                match kind {
-                                    PieceType::Queen => last_move.uci.push('q'),
-                                    PieceType::Rook => last_move.uci.push('r'),
-                                    PieceType::Bishop => last_move.uci.push('b'),
-                                    PieceType::Knight => last_move.uci.push('n'),
-                                    _ => {}
+        match layout {
+            BoardLayout::SandboxLayout => {
+                self.render_eval_bar(top_left, ui, true);
+                self.render_move_history(top_left, ui, true);
+                self.render_board(top_left, ui);
+                ctx.request_repaint();
+        
+                if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
+                    egui::Window::new("Promote Pawn")
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .collapsible(false)
+                        .resizable(false)
+                        .show(ctx, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.label("Choose piece to promote to:");
+                                for kind in [
+                                    PieceType::Bishop,
+                                    PieceType::Knight,
+                                    PieceType::Queen,
+                                    PieceType::Rook,
+                                ] {
+                                    if ui.button(kind.to_string()).clicked() {
+                                        //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
+                                        self.board.promote_pawn((old_pos, new_pos), kind);
+                                        let last_move = self.board.meta_data.move_list.last_mut().unwrap();
+                                        last_move.promotion = Some(kind);
+                                        
+                                        match kind {
+                                            PieceType::Queen => last_move.uci.push('q'),
+                                            PieceType::Rook => last_move.uci.push('r'),
+                                            PieceType::Bishop => last_move.uci.push('b'),
+                                            PieceType::Knight => last_move.uci.push('n'),
+                                            _ => {}
+                                        }
+                                        
+                                        self.board.ui.promtion_pending = None;
+                                        
+                                    }
                                 }
-                                
-                                self.board.ui.promtion_pending = None;
-                                
-                            }
-                        }
-                    });
-                });
+                            });
+                        });
+                    }
             }
+            BoardLayout::VersusLayout => {
+                
+            self.render_move_history(top_left, ui, true);
+            self.render_board(top_left, ui);
+            ctx.request_repaint();
+            self.render_game_info(top_left, ui);
+        
+            if let Some((new_pos, old_pos)) = self.board.ui.promtion_pending {
+                egui::Window::new("Promote Pawn")
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .collapsible(false)
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label("Choose piece to promote to:");
+                            for kind in [
+                                PieceType::Bishop,
+                                PieceType::Knight,
+                                PieceType::Queen,
+                                PieceType::Rook,
+                            ] {
+                                if ui.button(kind.to_string()).clicked() {
+                                    //3self.after_move_logic(&MoveInfo {old_pos:old_pos, new_pos:new_pos, promotion:Some(kind), is_capture: false});
+                                    self.board.promote_pawn((old_pos, new_pos), kind);
+                                    let last_move = self.board.meta_data.move_list.last_mut().unwrap();
+                                    last_move.promotion = Some(kind);
+                                    
+                                    match kind {
+                                        PieceType::Queen => last_move.uci.push('q'),
+                                        PieceType::Rook => last_move.uci.push('r'),
+                                        PieceType::Bishop => last_move.uci.push('b'),
+                                        PieceType::Knight => last_move.uci.push('n'),
+                                        _ => {}
+                                    }
+                                    
+                                    self.board.ui.promtion_pending = None;
+                                    
+                                }
+                            }
+                        });
+                    });
+                }
+                }
+                BoardLayout::AnalyzerLayout =>  {
+                    self.render_eval_bar(top_left, ui, true);
+                    self.render_board_menu(top_left, ui);
+                    self.render_move_history(top_left, ui, false);
+                    self.render_eval_chart(top_left, ui);
+                    self.render_board(top_left, ui);
+
+
+                    ctx.request_repaint();
+                }
+        }
+        
     }
     pub fn render_board(&mut self, top_left: Pos2, ui: &mut Ui) {
         let avail = ui.available_size();
@@ -107,7 +169,7 @@ impl MyApp{
         }
     }
     // Only enqueue BarEval when not saving (avoid starving MoveEval)
-    if !self.ui_controller.saving_game {
+    if !self.ui_controller.saving_game || self.board.been_modified{
         self.evaluator.send_eval_request(fen.clone(), EvalKind::BarEval);
     }
 }
@@ -354,5 +416,90 @@ pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool)
     
 
 }
+    pub fn render_board_menu(&mut self, top_left: Pos2, ui: &mut Ui) {
+        let board_square = self.ui_settings.square_size;
+        let board_size = board_square* 8.0;
+        let pad = self.ui_settings.padding as f32;
+        let menu_size = board_square * 0.8;
+        let menu_x =top_left.x;
+        let menu_y = top_left.y - pad - menu_size;
+
+        let menu_area = Rect::from_min_size(pos2(menu_x,menu_y), vec2(board_size, menu_size));
+        ui.painter().rect_filled(menu_area, 2.0, Color32::RED);
+        ui.allocate_new_ui(UiBuilder::default().max_rect(menu_area), |ui| {
+            ui.scope(|ui| {
+            ui.style_mut().spacing.item_spacing.x = 0.0;
+            ui.horizontal_centered(|ui| {
+                 
+                if self.colourd_image_button(vec2(menu_size, menu_size*0.9), &self.theme.ui.prev_button, Color32::DARK_GRAY, ui).clicked(){
+                    match self.analyzer.current_ply.checked_sub(1) {
+                        Some(ply_num) => {
+                            self.analyzer.current_ply = ply_num;
+                            match self.board.meta_data.move_list.get(ply_num as usize) {
+                                Some(ply) => {  
+                                    let res = self.board.undo_move(ply.uci.clone());
+                                    
+                                }
+                                None => {}
+                            }
+                        }
+                        None => {
+
+                        }
+                    }
+                };
+                if self.colourd_image_button(vec2(menu_size, menu_size*0.9), &self.theme.ui.next_button, Color32::DARK_GRAY, ui).clicked(){
+                     let ply = self.board.meta_data.move_list.get(self.analyzer.current_ply as usize);
+                    match ply {
+                        Some(ply) => {
+                            let res = self.board.do_move(ply.uci.clone());
+                            if res.is_ok() {
+                                self.analyzer.current_ply += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                };
+                if self.colourd_image_button(vec2(menu_size, menu_size*0.9), &self.theme.ui.heat_button, Color32::DARK_GRAY, ui).clicked(){
+
+                };
+                if self.colourd_image_button(vec2(menu_size, menu_size*0.9), &self.theme.ui.danger_button, Color32::DARK_GRAY, ui).clicked(){
+
+                };
+                
+            });
+            })
+        });
+        
+    }
+
+pub fn render_eval_chart(&self, top_left: Pos2, ui: &mut eframe::egui::Ui) {
+        let board_square = self.ui_settings.square_size;
+        let board_size = board_square* 8.5;
+        let pad = self.ui_settings.padding as f32;
+        let chart_x =top_left.x - board_square*0.5;
+        let chart_y = top_left.y + pad+ board_size;
+        let chart_height = board_square * 2.5;
+        
+        let chart_area = Rect::from_min_size(pos2(chart_x, chart_y), vec2(board_size, chart_height));
+        
+        let chart_color = Color32::BLACK;
+        
+        ui.painter().rect_filled(chart_area, 1.0, Color32::DARK_GRAY);
+        ui.allocate_new_ui(UiBuilder::default().max_rect(chart_area), |ui| {
+            let ox_start = pos2(chart_area.left()+pad, chart_area.center().y);
+            let ox_stop: Pos2 = pos2(chart_area.right()-pad, chart_area.center().y);
+
+            let oy_start = pos2(chart_area.left()+ 20.0, chart_area.center().y - chart_height/2.0+pad);
+
+            let oy_stop = pos2(chart_area.left()+20.0, chart_area.center().y + chart_height/2.0 - pad);
+
+
+            ui.painter().line_segment([ox_start, ox_stop], Stroke::new(2.0, chart_color));
+
+            ui.painter().line_segment([oy_start, oy_stop], Stroke::new(2.0, chart_color));
+        });
+        
+    }
 
 }

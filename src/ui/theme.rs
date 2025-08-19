@@ -17,6 +17,13 @@ use crate::engine::PieceColor;
 use crate::engine::PieceType;
 
 
+pub struct UiTextures{
+    pub next_button: Result<TextureHandle, Box<dyn Error>>,
+    pub prev_button: Result<TextureHandle, Box<dyn Error>>,
+    pub heat_button: Result<TextureHandle, Box<dyn Error>>,
+    pub danger_button: Result<TextureHandle, Box<dyn Error>>,
+    
+}
 
 
 
@@ -33,9 +40,9 @@ pub struct ThemeLoader{
     pub dark_pseudo_move_highlight: Color32,  
     pub light_pseudo_move_highlight: Color32,
     pub checkmate_square: Color32,
-
     pub white_pfp: Result<TextureHandle, Box<dyn Error>>,
-    pub black_pfp: Result<TextureHandle, Box<dyn Error>>
+    pub black_pfp: Result<TextureHandle, Box<dyn Error>>,
+    pub ui: UiTextures,
             
 }
 
@@ -81,6 +88,13 @@ impl From<&CreationContext<'_>> for ThemeLoader {
                 }
                   map
             },
+            ui: UiTextures {
+                next_button: load_texture(cc, "assets/ui/next_button.png"),
+                prev_button: load_texture(cc, "assets/ui/prev_button.png"),
+                heat_button: load_texture(cc, "assets/ui/heat_button.png"),
+                danger_button: load_texture(cc, "assets/ui/danger_button.png"),
+                
+             }
 
         }
     }

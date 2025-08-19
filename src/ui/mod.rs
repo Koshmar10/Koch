@@ -7,4 +7,5 @@ pub mod game_info;
 pub mod screen_render;
 pub mod qote;
 pub mod popup_render;
+pub mod custom;
 pub use crate::etc::DEFAULT_FEN;

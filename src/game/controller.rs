@@ -25,7 +25,7 @@ pub struct GameController {
 impl Default for GameController {
     fn default() -> Self {
         Self {
-            mode: GameMode::PvE,
+            mode: GameMode::Sandbox,
             player: PieceColor::White,
             enemey: PieceColor::Black,
             game_over: true,

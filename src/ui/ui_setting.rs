@@ -2,6 +2,8 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui::Color32;
 
+use crate::ui::render::BoardLayout;
+
 pub struct UiSettings {
     pub square_size: f32,
     pub timer_inside: Color32,
@@ -11,10 +13,12 @@ pub struct UiSettings {
     pub menu_quote: Option<String>,
     pub default_subtitle:String,
     pub padding: u32,
+    
 }
 pub struct UiController {
     pub saving_game: bool,
     pub save_game_rx: Option<Receiver<u8>>,
+    pub board_layout: BoardLayout,
 }
 
 impl Default for UiController {
@@ -22,6 +26,7 @@ impl Default for UiController {
         Self {
             save_game_rx: None,
             saving_game: false,
+            board_layout: BoardLayout::SandboxLayout,
         }
     }
 }
@@ -36,6 +41,7 @@ impl Default for  UiSettings {
             default_subtitle: String::from("- The great chess experience -"),
             menu_quote: None,
             padding: 8,
+            
         }
     }
 }

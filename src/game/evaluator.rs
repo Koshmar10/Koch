@@ -115,7 +115,7 @@ impl MyApp {
 
             loop {
                 // Block briefly for the first request
-                let first = match eval_request_rx.recv_timeout(Duration::from_millis(5)) {
+                let first = match eval_request_rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(req) => Some(req),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,

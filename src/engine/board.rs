@@ -289,6 +289,7 @@ impl Board{
             // Either king or rook position doesn't have a piece
             return false;
         };
+        
          let castle_squares: [((u8,u8), (u8,u8)); 2] = match self.turn {
              PieceColor::Black => {
                 [((0,4), (0, 0)), ((0,4), (0, 7))]
@@ -376,6 +377,7 @@ impl Board{
             self.black_small_castle = false;
             self.black_big_castle = false;
         }
+        self.rerender_move_cache();
 
     }
 

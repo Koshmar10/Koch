@@ -1,6 +1,6 @@
 use eframe::{egui::{self, vec2, Button, CentralPanel, Color32, CornerRadius, Frame, RichText, SidePanel, Stroke}, App};
 
-use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp, PopupType}, DEFAULT_FEN}};
+use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, fen::fen_parser, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp, PopupType}, render::BoardLayout, DEFAULT_FEN}};
 use crate::engine::board::MoveStruct;
 
 
@@ -146,9 +146,11 @@ impl MyApp{
                 ui.separator();
                 if ui.button("gameMode: Sandbox").clicked() {
                     self.game.mode = GameMode::Sandbox;
+                    self.ui_controller.board_layout = BoardLayout::SandboxLayout;
                 }
                 if ui.button("gameMode: PvE").clicked() {
                     self.game.mode = GameMode::PvE;
+                    self.ui_controller.board_layout = BoardLayout::VersusLayout;
                 }
                 if ui.button("start-game").clicked() {
                    
@@ -232,7 +234,7 @@ impl MyApp{
                         ui.min_rect().center().x - board_size / 2.0,
                         ui.min_rect().center().y - board_size / 2.0,
                     );
-                    self.render_board_layout(top_left, ui, ctx);
+                    self.render_board_layout(top_left, ui, ctx, self.ui_controller.board_layout.clone());
                     
                     ctx.request_repaint();
                     if let Some(popup) = &self.popup {
@@ -289,6 +291,13 @@ impl MyApp{
     }
     pub fn render_analyzer_view(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, metadata: &BoardMetaData){
         let pad = self.ui_settings.padding;
+        self.board.meta_data = metadata.clone();
+        SidePanel::right("cha_panel").frame(Frame::default().fill(Color32::DARK_GRAY))
+        .resizable(true)
+        .min_width(350.0)
+        .show(ctx, |ui| {
+            ui.label("this where the chat  box will be");
+        });
         CentralPanel::default()
                 .frame(Frame::default().fill(Color32::BLACK))
                 .show(ctx, |ui| {
@@ -296,6 +305,7 @@ impl MyApp{
                     ui.vertical_centered_justified(|ui|{
                         ui.horizontal(|ui| {
                             if ui.button("back").clicked() {
+                                self.board.set_fen((&DEFAULT_FEN).to_string());
                                 self.screen = AppScreen::History(HistoryScreenVariant::PastGameSelectionView);
                             }
                         });
@@ -333,7 +343,19 @@ impl MyApp{
                                 }
                             });
                         });
-                    })
+                    });
+                    
+                    let board_size = &self.ui_settings.square_size * 8.0;
+                    let top_left = egui::pos2(
+                        ui.min_rect().center().x - board_size / 2.0,
+                        ui.min_rect().center().y - board_size / 2.0,
+                    );
+                    self.render_board_layout(top_left, ui, ctx, BoardLayout::AnalyzerLayout);
+                    egui::Window::new("floating window").collapsible(true).resizable(true).show(ctx, |ui|{
+                        ui.label("window");
+                        ui.label(self.analyzer.current_ply.to_string());
+                    });
                 });
+
     }
 }

@@ -1,6 +1,6 @@
 use eframe::{egui::{self}, CreationContext};
 
-use crate::{database::create::create_database, engine::{board::BoardMetaData, Board}, game::{controller::GameController, evaluator::Evaluator}, ui::{theme, ui_setting::{UiController, UiSettings}, DEFAULT_FEN}};
+use crate::{analyzer::board_interactions::AnalyzerController, database::create::create_database, engine::{board::BoardMetaData, Board}, game::{controller::GameController, evaluator::Evaluator}, ui::{theme, ui_setting::{UiController, UiSettings}, DEFAULT_FEN}};
 
 pub enum HistoryScreenVariant { PastGameSelectionView, GameAnalyzerView(BoardMetaData)}
 pub enum AppScreen {
@@ -22,6 +22,7 @@ pub struct MyApp {
     pub past_games: Option<Vec<BoardMetaData>>,
     pub ui_settings: UiSettings,
     pub ui_controller: UiController,
+    pub analyzer: AnalyzerController
 }
 
 
@@ -42,6 +43,7 @@ impl From<&CreationContext<'_>> for MyApp{
                 past_games: None,
                 ui_settings: UiSettings::default(),
                 ui_controller: UiController::default(),
+                analyzer: AnalyzerController::default(),
                 
 
             };

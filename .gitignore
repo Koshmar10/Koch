@@ -1,4 +1,4 @@
 /target
+Cargo.lock
 chess.db
 flamegraph.svg
-Cargo.lock

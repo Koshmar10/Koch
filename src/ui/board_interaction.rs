@@ -85,7 +85,7 @@ impl MyApp{
                                 let casteled = self.board.try_castle(old.position, new.position);
                                 
                                 if !casteled {self.board.select_piece(new);}
-                                else {self.board.deselect_piece(); self.board.change_turn();}
+                                else {self.board.deselect_piece(); self.board.change_turn(); }
                             } else {
                                 self.board.select_piece(new);
                             }
@@ -200,6 +200,7 @@ impl MyApp{
                                 let casteled = self.board.try_castle(old.position, new.position);
                                 
                                 if !casteled {self.board.select_piece(new);}
+                                else {self.board.deselect_piece(); self.board.change_turn(); }
                             } else {
                                 self.board.select_piece(new);
                             }

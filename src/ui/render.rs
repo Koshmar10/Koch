@@ -1,4 +1,5 @@
 use eframe::egui::{self, menu, pos2, vec2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder};
+use eframe::egui::epaint::PathShape; // add this
 use rand::rngs::SmallRng;
 use egui_plot::{Line, Plot, PlotPoints};
 use crate::{engine::{ChessPiece, PieceColor, PieceType}, game::evaluator::EvalKind, ui::app::MyApp};
@@ -158,13 +159,15 @@ impl MyApp{
             painter.rect_filled(rect, 0.0, color);
             
             // pull the piece out of the mapped board cell
+            let poz = &(board_rank as u8, board_file as u8);
             let piece = self.board.squares[board_rank][board_file];
+            self.render_attack_move(poz, &rect, painter);
             self.render_selected(&piece, &rect, painter);
             self.render_piece(&piece, &rect, &painter);
-            self.render_quiet_move(&(board_rank as u8, board_file as u8), &rect, &painter);
-            self.render_capture_move(&(board_rank as u8, board_file as u8), &rect, &painter);
+            self.render_quiet_move(poz, &rect, &painter);
+            self.render_capture_move(poz, &rect, &painter);
             self.handle_board_interaction_logic(
-                &(board_rank as u8, board_file as u8),
+                poz,
                 &response);
         }
     }
@@ -221,6 +224,32 @@ pub fn render_capture_move(&self, poz :&(u8, u8), rect: &Rect, painter: &Painter
                                     self.theme.dark_pseudo_move_highlight
                                 },
                             )),
+                        );
+                    }
+                    else {return;}
+                }
+                None => {}
+            }
+        }
+        None => {return;}
+    }
+}
+pub fn render_attack_move(&self, poz :&(u8, u8), rect: &Rect, painter: &Painter){
+    match &self.board.ui.selected_piece{
+        Some(piece) => {
+            let moves = &self.board.move_cache.get(&piece.id);
+            match moves{
+                Some(moves) => {
+                    if moves.attacks.contains(poz) {
+                        // Draw a light red square for attack moves
+                        painter.rect_filled(
+                            *rect,
+                            0.0,
+                            if (poz.0 + poz.1) % 2 == 0 {
+                                Color32::from_rgb(255, 150, 150) // lighter red for light squares
+                            } else {
+                                Color32::from_rgb(220, 100, 100) // darker red for dark squares
+                            },
                         );
                     }
                     else {return;}
@@ -437,7 +466,7 @@ pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool)
                             self.analyzer.current_ply = ply_num;
                             match self.board.meta_data.move_list.get(ply_num as usize) {
                                 Some(ply) => {  
-                                    let res = self.board.undo_move(ply.uci.clone());
+                                    let res = self.undo_move(ply.uci.clone());
                                     
                                 }
                                 None => {}
@@ -452,7 +481,7 @@ pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool)
                      let ply = self.board.meta_data.move_list.get(self.analyzer.current_ply as usize);
                     match ply {
                         Some(ply) => {
-                            let res = self.board.do_move(ply.uci.clone());
+                            let res = self.do_move(ply.uci.clone());
                             if res.is_ok() {
                                 self.analyzer.current_ply += 1;
                             }
@@ -473,33 +502,5 @@ pub fn render_move_history(&self, top_left: Pos2, ui: &mut Ui, is_visible: bool)
         
     }
 
-pub fn render_eval_chart(&self, top_left: Pos2, ui: &mut eframe::egui::Ui) {
-        let board_square = self.ui_settings.square_size;
-        let board_size = board_square* 8.5;
-        let pad = self.ui_settings.padding as f32;
-        let chart_x =top_left.x - board_square*0.5;
-        let chart_y = top_left.y + pad+ board_size;
-        let chart_height = board_square * 2.5;
-        
-        let chart_area = Rect::from_min_size(pos2(chart_x, chart_y), vec2(board_size, chart_height));
-        
-        let chart_color = Color32::BLACK;
-        
-        ui.painter().rect_filled(chart_area, 1.0, Color32::DARK_GRAY);
-        ui.allocate_new_ui(UiBuilder::default().max_rect(chart_area), |ui| {
-            let ox_start = pos2(chart_area.left()+pad, chart_area.center().y);
-            let ox_stop: Pos2 = pos2(chart_area.right()-pad, chart_area.center().y);
-
-            let oy_start = pos2(chart_area.left()+ 20.0, chart_area.center().y - chart_height/2.0+pad);
-
-            let oy_stop = pos2(chart_area.left()+20.0, chart_area.center().y + chart_height/2.0 - pad);
-
-
-            ui.painter().line_segment([ox_start, ox_stop], Stroke::new(2.0, chart_color));
-
-            ui.painter().line_segment([oy_start, oy_stop], Stroke::new(2.0, chart_color));
-        });
-        
-    }
 
 }

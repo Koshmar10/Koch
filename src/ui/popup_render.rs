@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::{database::{create::{insert_game_and_get_id, insert_single_move}, save_game}, engine::{Board, PieceType}, ui::{app::{MyApp, PopupType}, DEFAULT_FEN}};
+use crate::{database::{create::{insert_game_and_get_id, insert_single_move}, save_game::{self, SaveType}}, engine::{Board, PieceType}, game::controller::GameMode, ui::{app::{MyApp, PopupType}, DEFAULT_FEN}};
 use crate::database::create;
 
 
@@ -20,12 +20,14 @@ impl MyApp {
                                         self.board = Board::from(&DEFAULT_FEN.to_owned());
                                         self.game.game_over = true;
                                     }
-                                    let mut saved = false;
                                     if ui.button("save game").clicked() {
-                                        if !saved {
-                                            self.save_game();
-                                        }
-                                        saved = true; 
+                                         match self.game.mode {
+                                    GameMode::PvE => {
+                                        self.start_save_game_sequence(SaveType::VersusSave{player: self.game.player});
+                                    }   
+                                    GameMode::Sandbox =>  {self.start_save_game_sequence(SaveType::SandboxSave);}
+                                    _ => {}
+                    }
                                     }
                                 });
                             });

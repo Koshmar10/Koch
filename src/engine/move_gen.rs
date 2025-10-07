@@ -32,7 +32,7 @@ impl Board{
                     all_moves.extend(self.get_file_moves(piece, 1, h));
                 }
                 for h in [HorizontalDirection::Left, HorizontalDirection::Right]{
-                    all_moves.extend(self.get_rank_moves(piece, 8, h));
+                    all_moves.extend(self.get_rank_moves(piece, 1, h));
                 }
                 
                 all_moves
@@ -82,6 +82,8 @@ impl Board{
         
         let captures = self.filter_capture_moves(piece, &moves);
         let captures = self.legalize_capture_moves(piece, captures);
+
+        let attacks = self.get_attack_squares(piece);
          
         return (quiet, captures)
 
@@ -231,7 +233,7 @@ impl Board{
                 let (r, c) = (piece.position.0 as i8, piece.position.1 as i8);
                 
                 // Pawns attack diagonally - use directions with POV logic
-                let mut direction = if piece.color == PieceColor::White { 1 } else { -1 };
+                let mut direction = if piece.color == PieceColor::White { -1 } else { 1 };
                 
                 
                 let attack_rank = r + direction;
@@ -254,29 +256,32 @@ impl Board{
         }
         
         pub fn rerender_move_cache(&mut self){
-    let squares = &self.squares;
-    for rank in squares{
-        for piece in rank {
-            match piece {
-                Some(piece) => {
-                    // get_legal_moves returns (quiet, captures)
-                    let (quiet_moves, capture_moves) = self.get_legal_moves(&piece);
-                    if let Some(pm) = self.move_cache.get_mut(&piece.id) {
-                        pm.quiet_moves = quiet_moves;
-                        pm.capture_moves = capture_moves;
-                    } else {
-                        self.move_cache.insert(
-                            piece.id,
-                            PieceMoves{
-                                quiet_moves,
-                                capture_moves,
-                            }
-                        );
+        let squares = &self.squares;
+        for rank in squares{
+            for piece in rank {
+                match piece {
+                    Some(piece) => {
+                        // get_legal_moves returns (quiet, captures)
+                        let (quiet_moves, capture_moves) = self.get_legal_moves(&piece);
+                        let attacks = self.get_attack_squares(piece);
+                        if let Some(pm) = self.move_cache.get_mut(&piece.id) {
+                            pm.quiet_moves = quiet_moves;
+                            pm.capture_moves = capture_moves;
+                            pm.attacks = attacks;
+                        } else {
+                            self.move_cache.insert(
+                                piece.id,
+                                PieceMoves{
+                                    quiet_moves,
+                                    capture_moves,
+                                    attacks,
+                                }
+                            );
+                        }
                     }
+                    None => {}
                 }
-                None => {}
             }
         }
-    }
 }
 }

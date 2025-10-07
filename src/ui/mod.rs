@@ -8,4 +8,6 @@ pub mod screen_render;
 pub mod qote;
 pub mod popup_render;
 pub mod custom;
+pub mod chart_render;
+
 pub use crate::etc::DEFAULT_FEN;

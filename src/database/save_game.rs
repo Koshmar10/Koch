@@ -1,10 +1,11 @@
 use std::sync::mpsc;
 
-use crate::{database::create::{insert_game_and_get_id, insert_single_move}, engine::Board, game::evaluator::{EvalKind, EvalResponse, EvaluationRequest}, ui::app::MyApp};
+use crate::{database::create::{insert_game_and_get_id, insert_single_move}, engine::{Board, PieceColor}, game::{evaluator::{EvalKind, EvalResponse, EvaluationRequest}, stockfish_engine::StockfishCmd}, ui::{app::MyApp, DEFAULT_FEN}};
 
+pub enum SaveType {SandboxSave, VersusSave{player: PieceColor}}
 
 impl MyApp{
-    pub fn save_game(&mut self){
+    pub fn save_game(&mut self, save_type: SaveType){
         //we get the reference of the board that was plaed, we reset it to the starting position
           let save_info = insert_game_and_get_id(&self.board.meta_data);
         let save_info = match save_info {
@@ -36,7 +37,7 @@ impl MyApp{
                     position: sample_board.to_string(),
                     kind: EvalKind::MoveEval { reply_to: os_tx }
                 });
-                match os_rx.recv_timeout(std::time::Duration::from_secs(3)) {
+                match os_rx.recv() {
                     Ok(response) => {
                         mv.evaluation = response;
                         if let Err(e) = insert_single_move(save_info, mv) {
@@ -58,10 +59,17 @@ impl MyApp{
        
     }
 
-    pub fn start_save_game_sequence(&mut self){
+    pub fn start_save_game_sequence(&mut self, save_type: SaveType){
         if !self.ui_controller.saving_game {
-            self.save_game();
+            self.save_game(save_type);
             self.ui_controller.saving_game = true;
+            self.board = Board::from(&DEFAULT_FEN.to_owned());
+            self.game.game_over = true;
+            if let Some(tx) = &self.game.stockfish_tx {
+                if let Err(e) = tx.send(StockfishCmd::Stop) {
+                    eprintln!("failed to send `stop` to stockfish: {}", e);
+                }
+            }
         }
     }
     pub fn poll_save_game_worker(&mut self){

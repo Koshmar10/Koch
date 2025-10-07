@@ -1,1 +1,4 @@
 /target
+chess.db
+flamegraph.svg
+Cargo.lock

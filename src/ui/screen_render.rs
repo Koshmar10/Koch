@@ -1,6 +1,6 @@
 use eframe::{egui::{self, vec2, Button, CentralPanel, Color32, CornerRadius, Frame, RichText, SidePanel, Stroke}, App};
 
-use crate::{database::create::{destroy_database, get_game_list}, engine::{board::{BoardMetaData, MoveInfo}, fen::fen_parser, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp, PopupType}, render::BoardLayout, DEFAULT_FEN}};
+use crate::{analyzer::board_interactions::AnalyzerController, database::{create::{destroy_database, get_game_list}, save_game::SaveType}, engine::{board::{BoardMetaData, MoveInfo}, fen::fen_parser, Board, PieceColor, PieceType}, etc::{PLAYER_NAME, STOCKFISH_ELO}, game::{self, controller::GameMode, stockfish_engine::StockfishCmd}, ui::{app::{AppScreen, HistoryScreenVariant, MyApp, PopupType}, render::BoardLayout, DEFAULT_FEN}};
 use crate::engine::board::MoveStruct;
 
 
@@ -131,14 +131,14 @@ impl MyApp{
                 };
                 if ui.button("save game").clicked() {
                     self.popup = Some(PopupType::SavingGamePopup);
-                    self.start_save_game_sequence();
-                    self.board = Board::from(&DEFAULT_FEN.to_owned());
-                    self.game.game_over = true;
-                    if let Some(tx) = &self.game.stockfish_tx {
-                        if let Err(e) = tx.send(StockfishCmd::Stop) {
-                            eprintln!("failed to send `stop` to stockfish: {}", e);
-                        }
+                    match self.game.mode {
+                        GameMode::PvE => {
+                            self.start_save_game_sequence(SaveType::VersusSave{player: self.game.player});
+                        }   
+                        GameMode::Sandbox =>  {self.start_save_game_sequence(SaveType::SandboxSave);}
+                        _ => {}
                     }
+                    
                 }
                 if ui.button("reset-board").clicked() {
                     self.board = Board::from(&DEFAULT_FEN.to_owned());
@@ -305,6 +305,7 @@ impl MyApp{
                     ui.vertical_centered_justified(|ui|{
                         ui.horizontal(|ui| {
                             if ui.button("back").clicked() {
+                                self.analyzer = AnalyzerController::default();
                                 self.board.set_fen((&DEFAULT_FEN).to_string());
                                 self.screen = AppScreen::History(HistoryScreenVariant::PastGameSelectionView);
                             }

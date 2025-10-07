@@ -157,7 +157,7 @@ impl MyApp {
                         continue;
                     }
 
-                    let _ = engine.set_depth(14);
+                    let _ = engine.set_depth(15);
                     match engine.go() {
                         Ok(output) => {
                             let eval = output.eval();

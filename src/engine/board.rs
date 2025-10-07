@@ -4,6 +4,7 @@ use crate::{engine::{fen::fen_parser, move_gen::MoveError, ChessPiece, PieceColo
 use chrono::Local;
 use eframe::egui::CentralPanel;
 
+
 #[derive(Clone)]
 pub struct Board{
     pub squares: [[Option<ChessPiece>; 8]; 8],
@@ -27,6 +28,7 @@ pub struct Board{
 pub struct PieceMoves{
     pub quiet_moves: Vec<(u8,u8)>,
     pub capture_moves: Vec<(u8,u8)>,
+    pub attacks: Vec<(u8, u8)>,
 }
 pub struct MoveInfo{
     pub old_pos: (u8, u8),
@@ -173,7 +175,7 @@ impl From<&String> for Board {
         }
     }
 }   
-impl Board{
+impl Board {
     pub fn move_piece(&mut self, old_pos: (u8, u8), new_pos: (u8, u8)) -> Result<MoveStruct, MoveError> {
         let mut failed_to_move = false;
 
@@ -183,7 +185,8 @@ impl Board{
         };
         let replacer = PieceMoves {
                 quiet_moves: Vec::new(),
-                capture_moves: Vec::new()};
+                capture_moves: Vec::new(),
+                attacks: Vec::new()};
         let moves = self
             .move_cache
             .get(&moving_piece.id)
@@ -276,76 +279,106 @@ impl Board{
 
         return true;
     }
-    pub fn can_castle(&self, king_pos: (u8,u8), rook_pos: (u8,u8)) -> bool{
-        // Get the king and rook pieces
-        if let (Some(king), Some(rook)) = (
-            self.squares[king_pos.0 as usize][king_pos.1 as usize].as_ref(),
-            self.squares[rook_pos.0 as usize][rook_pos.1 as usize].as_ref()
-        ) {
-            // Verify pieces are correct type and color
-            if king.kind != PieceType::King  {return false;}
-            if rook.kind != PieceType::Rook  {return false;}
-        } else {
-            // Either king or rook position doesn't have a piece
-            return false;
-        };
-        
-         let castle_squares: [((u8,u8), (u8,u8)); 2] = match self.turn {
-             PieceColor::Black => {
-                [((0,4), (0, 0)), ((0,4), (0, 7))]
-             },
-             PieceColor:: White => {
-                [((7,4), (7, 0)), ((7,4), (7, 7))]
-             },
-         };
-        //check that the king and rook are in position
-        if !castle_squares.contains(&(king_pos, rook_pos)){return false};
-        //we check if the squares between them are not occupied
-        
-        let castle_type = if king_pos.1.abs_diff(rook_pos.1) == 4 {CastleType::QueenSide} else {CastleType::KingSide};
-
-        match castle_type {
-            CastleType::QueenSide => {
-                for i in rook_pos.1+1..king_pos.1{
-                    if self.squares[king_pos.0 as usize][i as usize].is_some() {
-                        return false;
-                    }
-                    // Check if the king would pass through a square that's under attack
-                    // For queenside castling, the king passes through two squares: (king_pos.1-1) and (king_pos.1-2)
-                    for i in king_pos.1-2..=king_pos.1 {
-                        // Check if this square is a target in any opponent's capture_moves
-                        let check_square = (king_pos.0, i);
-                        for (_, piece_moves) in self.move_cache.iter() {
-                            if piece_moves.capture_moves.contains(&check_square) {
-                                return false; // Can't castle through check
+    /// Returns true if `sq` is attacked by any piece of `by_color`
+    fn is_square_attacked_by(&self, sq: (u8, u8), by_color: PieceColor) -> bool {
+        for rank in 0..8 {
+            for file in 0..8 {
+                if let Some(p) = self.squares[rank][file] {
+                    if p.color != by_color { continue; }
+                    match p.kind {
+                        PieceType::Pawn => {
+                            // White pawns attack up-left/up-right; Black down-left/down-right
+                            let (r, c) = (p.position.0 as i8, p.position.1 as i8);
+                            let dir = if by_color == PieceColor::White { -1 } else { 1 };
+                            let attacks = [(r + dir, c - 1), (r + dir, c + 1)];
+                            for (ar, ac) in attacks {
+                                if (0..8).contains(&ar) && (0..8).contains(&ac) {
+                                    if (ar as u8, ac as u8) == sq {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // Use pseudo moves for attack map (good for N,B,R,Q,K)
+                            if self.get_all_moves(&p).contains(&sq) {
+                                return true;
                             }
                         }
                     }
                 }
             }
-            CastleType::KingSide => {
-                for i in king_pos.1+1..rook_pos.1{
-                    if self.squares[king_pos.0 as usize][i as usize].is_some() {
-                        return false;
-                    }
-                };
-                // Check if the king would pass through a square that's under attack
-                // For kingside castling, the king passes through two squares: king_pos.1 and (king_pos.1+1)
-                for i in king_pos.1..=king_pos.1+1 {
-                    // Check if this square is a target in any opponent's capture_moves
-                    let check_square = (king_pos.0, i);
-                    for (_, piece_moves) in self.move_cache.iter() {
-                        if piece_moves.capture_moves.contains(&check_square) {
-                            return false; // Can't castle through check
-                        }
-                    }
-                }
-            }
-        } 
-        // we check if the king is in check
-        if self.is_in_check(self.turn) {return false;}
+        }
+        false
+    }
 
-        return true;
+    pub fn can_castle(&self, king_pos: (u8,u8), rook_pos: (u8,u8)) -> bool{
+        // Get the king and rook pieces
+        let (king, rook) = match (
+            self.squares[king_pos.0 as usize][king_pos.1 as usize].as_ref(),
+            self.squares[rook_pos.0 as usize][rook_pos.1 as usize].as_ref()
+        ) {
+            (Some(k), Some(r)) if k.kind == PieceType::King && r.kind == PieceType::Rook => (k, r),
+            _ => { return false; }
+        };
+
+        // Must be same color and current side to move
+        if king.color != self.turn || rook.color != self.turn {
+            return false;
+        }
+        // Pieces must not have moved
+        if king.has_moved || rook.has_moved {
+            return false;
+        }
+
+        // Check squares are the standard ones (e1/e8 with a1/h1 or a8/h8)
+        let castle_squares: [((u8,u8), (u8,u8)); 2] = match self.turn {
+            PieceColor::Black => [((0,4),(0,0)), ((0,4),(0,7))],
+            PieceColor::White => [((7,4),(7,0)), ((7,4),(7,7))],
+        };
+        if !castle_squares.contains(&(king_pos, rook_pos)) {
+            return false;
+        }
+
+        // Check castling rights flags
+        let castle_type = if king_pos.1.abs_diff(rook_pos.1) == 4 { CastleType::QueenSide } else { CastleType::KingSide };
+        match (self.turn, &castle_type) {
+            (PieceColor::White, CastleType::KingSide) if !self.white_small_castle => return false,
+            (PieceColor::White, CastleType::QueenSide) if !self.white_big_castle   => return false,
+            (PieceColor::Black, CastleType::KingSide) if !self.black_small_castle => return false,
+            (PieceColor::Black, CastleType::QueenSide) if !self.black_big_castle   => return false,
+            _ => {}
+        }
+
+        // Path between king and rook must be empty
+        let range = if rook_pos.1 < king_pos.1 {
+            (rook_pos.1+1)..king_pos.1 // queenside: b..d
+        } else {
+            (king_pos.1+1)..rook_pos.1 // kingside: f..g
+        };
+        for file in range {
+            if self.squares[king_pos.0 as usize][file as usize].is_some() {
+                return false;
+            }
+        }
+
+        // King cannot be in check, and transit/destination squares must not be attacked
+        if self.is_in_check(self.turn) { return false; }
+
+        let opponent = match self.turn { PieceColor::White => PieceColor::Black, PieceColor::Black => PieceColor::White };
+        // Transit and destination files for king: d,c (queenside) or f,g (kingside)
+        let (t1, t2) = match castle_type {
+            CastleType::QueenSide => (king_pos.1 - 1, king_pos.1 - 2), // d, c
+            CastleType::KingSide  => (king_pos.1 + 1, king_pos.1 + 2), // f, g
+        };
+
+        let transit1 = (king_pos.0, t1);
+        let transit2 = (king_pos.0, t2);
+
+        if self.is_square_attacked_by(transit1, opponent) { return false; }
+        if self.is_square_attacked_by(transit2, opponent) { return false; }
+
+        true
     }
     pub fn execute_castle(&mut self, king_pos: (u8,u8), rook_pos: (u8,u8)){
         // Determine castle type based on king and rook positions
@@ -362,12 +395,16 @@ impl Board{
         };
 
         // Move king
-        let king = self.squares[king_pos.0 as usize][king_pos.1 as usize].take();
-        self.squares[king_pos.0 as usize][king_new_col as usize] = king;
+        let mut king = self.squares[king_pos.0 as usize][king_pos.1 as usize].take().unwrap();
+        king.position = (king_pos.0, king_new_col);
+        king.has_moved = true;
+        self.squares[king_pos.0 as usize][king_new_col as usize] = Some(king);
 
         // Move rook
-        let rook = self.squares[rook_pos.0 as usize][rook_pos.1 as usize].take();
-        self.squares[rook_pos.0 as usize][rook_new_col as usize] = rook;
+        let mut rook = self.squares[rook_pos.0 as usize][rook_pos.1 as usize].take().unwrap();
+        rook.position = (rook_pos.0, rook_new_col);
+        rook.has_moved = true;
+        self.squares[rook_pos.0 as usize][rook_new_col as usize] = Some(rook);
 
         // Update castling rights
         if self.turn == PieceColor::White {
@@ -377,8 +414,8 @@ impl Board{
             self.black_small_castle = false;
             self.black_big_castle = false;
         }
-        self.rerender_move_cache();
-
+        
+        self.been_modified = true;
     }
 
     pub fn change_turn(&mut self){

@@ -7,6 +7,7 @@ edition = "2024"
 chrono = "0.4.41"
 eframe = "0.31.1"
 egui_extras   = { version = "0.*", features = ["svg", "file", "image"] }
+egui_plot = "0.32.1"
 image = { version = "0.25", features = ["jpeg", "png"] } # Add the types you want support for
 rand = "0.9.1"
 rusqlite = "0.37.0"

@@ -1,4 +1,14 @@
+# Builds
 /target
-Cargo.lock
+
+# Local DB anywhere
 chess.db
+**/*.db
+
+# Local flamegraphs anywhere
 flamegraph.svg
+**/flamegraph.svg
+
+# OS/editor junk (optional)
+.DS_Store
+Thumbs.db

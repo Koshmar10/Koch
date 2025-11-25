@@ -55,7 +55,15 @@ export function Analyzer({ gameId }: AnalyzerProps) {
         }
         load();
     }, [gameId])
-
+    if (!analyzerContoller) {
+        return (
+            <div className="flex justify-center items-center w-full h-full">
+                <h1 className="text-xl">
+                    No Anayzer Opened
+                </h1>
+            </div>
+        )
+    }
     return (
         <div className="flex flex-col w-full h-full">
             <div className="flex flex-row justify-between bg-primary/80 text-secondary pt-4 px-4 pb-4 h-14">

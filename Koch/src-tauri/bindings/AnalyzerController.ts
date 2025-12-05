@@ -2,4 +2,4 @@
 import type { Board } from "./Board";
 import type { ChessPiece } from "./ChessPiece";
 
-export type AnalyzerController = { board: Board, current_ply: number, taken_piece_stack: Array<[number, ChessPiece]>, };
+export type AnalyzerController = { game_id: number, board: Board, current_ply: number, taken_piece_stack: Array<[number, ChessPiece]>, };

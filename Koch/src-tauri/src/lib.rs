@@ -1,6 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod engine;
+use std::sync::mpsc;
 use std::sync::Mutex;
+use std::thread;
+
 //pub mod game;
 pub mod analyzer;
 pub mod database;
@@ -8,16 +11,18 @@ pub mod etc;
 pub mod game;
 pub mod server;
 
-use crate::analyzer::board_interactions::{do_move, undo_move, AnalyzerController};
+use crate::analyzer::board_interactions::{do_move, get_fen, undo_move, AnalyzerController};
 use crate::database::create::{get_game_by_id, get_game_list};
 use crate::engine::board::{BoardMetaData, EvalResponse, GameResult};
-
+use crate::server::server::{EngineCommand, PvObject};
 use crate::{
     engine::board,
     engine::{board::PieceMoves, Board, PieceColor, PieceType},
     game::controller::{GameController, TerminationBy},
     server::server::ServerState,
 };
+use std::time::Duration;
+use stockfish::Stockfish;
 use tauri::{Builder, Manager};
 
 fn make_engine_move(state: &mut ServerState, fen: String) -> Option<String> {
@@ -343,10 +348,236 @@ fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> Analyze
         }
     }
 }
+pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<PvObject>) {
+    let (cmd_tx, cmd_rx): (mpsc::Sender<EngineCommand>, mpsc::Receiver<EngineCommand>) =
+        mpsc::channel();
+    let (update_tx, update_rx): (mpsc::Sender<PvObject>, mpsc::Receiver<PvObject>) =
+        mpsc::channel();
+
+    thread::spawn(move || {
+        println!("[Analyzer] Thread starting...");
+        let mut engine = match Stockfish::new("/usr/bin/stockfish") {
+            Ok(e) => {
+                println!("[Analyzer] Stockfish started");
+                e
+            }
+            Err(e) => {
+                eprintln!("[Analyzer] Failed to start engine: {e}");
+                return;
+            }
+        };
+
+        // Setup Options
+        if let Err(e) = engine.set_option("Threads", "6") {
+            eprintln!("[Analyzer] Failed to set Threads: {e}");
+        }
+        if let Err(e) = engine.set_option("Hash", "1024") {
+            eprintln!("[Analyzer] Failed to set Hash: {e}");
+        }
+        if let Err(e) = engine.set_option("MultiPV", "3") {
+            eprintln!("[Analyzer] Failed to set MultiPV: {e}");
+        }
+
+        let mut is_searching = false;
+        let mut current_fen = String::new();
+        let mut current_pv = PvObject::default();
+
+        loop {
+            match cmd_rx.try_recv() {
+                Ok(command) => {
+                    println!("[Analyzer] Command received: {:?}", command);
+                    match command {
+                        EngineCommand::SetFen(fen) => {
+                            if let Err(e) = engine.set_fen_position(&fen) {
+                                eprintln!("[Analyzer] set_fen_position error: {e}");
+                            } else {
+                                println!("[Analyzer] FEN set");
+                            }
+                            current_fen = fen.clone();
+                            current_pv = PvObject {
+                                fen,
+                                depth: 0,
+                                lines: std::collections::HashMap::new(),
+                            };
+                        }
+                        EngineCommand::GoInfinite => match engine.ensure_ready() {
+                            Ok(_) => {
+                                println!("[Analyzer] Engine ready");
+                                if let Err(e) = engine.uci_send("go infinite") {
+                                    eprintln!("[Analyzer] go infinite error: {e}");
+                                } else {
+                                    println!("[Analyzer] Search started");
+                                    is_searching = true;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[Analyzer] ensure_ready error: {e}");
+                            }
+                        },
+                        EngineCommand::Stop => {
+                            if is_searching {
+                                if let Err(e) = engine.uci_send("stop") {
+                                    eprintln!("[Analyzer] stop error: {e}");
+                                } else {
+                                    println!("[Analyzer] Stop sent");
+                                    is_searching = false;
+                                }
+                            } else {
+                                println!("[Analyzer] Stop ignored (not searching)");
+                            }
+                        }
+                        EngineCommand::Quit => {
+                            println!("[Analyzer] Quit received, exiting thread");
+                            break;
+                        }
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    eprintln!("[Analyzer] Command channel disconnected, exiting thread");
+                    break;
+                }
+            }
+
+            if is_searching {
+                let line = engine.read_line();
+                if line.is_empty() {
+                    continue;
+                }
+                // Debug raw output
+                // println!("[Analyzer] Engine: {line}");
+
+                if line.starts_with("bestmove") {
+                    println!("[Analyzer] bestmove received, search finished");
+                    is_searching = false;
+                    continue;
+                }
+
+                if line.contains("multipv") && line.contains(" pv ") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    let mut multipv_idx = 0;
+                    let mut depth = 0;
+                    let mut moves = String::new();
+
+                    for i in 0..parts.len() {
+                        if parts[i] == "multipv" {
+                            multipv_idx =
+                                parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(1);
+                        }
+                        if parts[i] == "depth" {
+                            depth = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                        }
+                        if parts[i] == "pv" {
+                            moves = parts[i + 1..].join(" ");
+                            break;
+                        }
+                    }
+
+                    if depth >= current_pv.depth {
+                        current_pv.depth = depth;
+                        current_pv.lines.insert(multipv_idx, moves.clone());
+                        if let Err(e) = update_tx.send(current_pv.clone()) {
+                            eprintln!("[Analyzer] Failed to send update: {e}");
+                        } else {
+                            println!(
+                                "[Analyzer] Update sent: depth={}, multipv={}, moves={}",
+                                depth, multipv_idx, moves
+                            );
+                        }
+                    }
+                }
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        println!("[Analyzer] Thread exited");
+    });
+    (cmd_tx, update_rx)
+}
+#[tauri::command]
+fn set_analyzer_fen(state: tauri::State<'_, Mutex<ServerState>>, fen: &str) {
+    println!("set commandt tried");
+    let mut state = state.lock().unwrap();
+    match &state.analyzer_tx {
+        Some(rx) => {
+            match rx.send(EngineCommand::Stop) {
+                Ok(res) => {
+                    println!("analyzer stopped");
+                }
+                Err(e) => {
+                    println!("error on stop");
+                }
+            };
+            match rx.send(EngineCommand::SetFen(fen.to_string())) {
+                Ok(res) => {
+                    println!("set fen on thread ok");
+                }
+                Err(e) => {
+                    println!("set fen on thread err");
+                }
+            }
+            match rx.send(EngineCommand::GoInfinite) {
+                Ok(res) => {
+                    println!("analyzer started for new fen");
+                }
+                Err(e) => {
+                    println!("error when trying to start");
+                }
+            };
+        }
+        None => {
+            println!("not tx");
+        }
+    }
+}
+
+#[tauri::command]
+fn stop_analyzer(state: tauri::State<'_, Mutex<ServerState>>) -> bool {
+    // println!("poll commandt tried"); // Optional: remove spam logs
+    let mut state = state.lock().unwrap();
+    match &state.analyzer_tx {
+        Some(tx) => {
+            match tx.send(EngineCommand::Stop) {
+                Ok(res) => {
+                    println!("analyzer stopped");
+                    return true;
+                }
+                Err(e) => {
+                    println!("error on stop");
+                    return true;
+                }
+            };
+        }
+        None => return false,
+    }
+}
+
+#[tauri::command]
+fn poll_analyzer(state: tauri::State<'_, Mutex<ServerState>>) -> Option<PvObject> {
+    // println!("poll commandt tried"); // Optional: remove spam logs
+    let mut state = state.lock().unwrap();
+    match &state.analyzer_rx {
+        Some(rx) => {
+            let mut latest = None;
+            // DRAIN the channel: keep reading until empty to get the freshest data
+            while let Ok(msg) = rx.try_recv() {
+                latest = Some(msg);
+            }
+            latest
+        }
+        None => None,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let (tx, rx) = start_analyzer_thread();
     tauri::Builder::default()
-        .manage(Mutex::new(ServerState::default()))
+        .manage(Mutex::new(ServerState {
+            analyzer_tx: Some(tx),
+            analyzer_rx: Some(rx),
+            ..Default::default()
+        }))
         .setup(|_app| Ok(()))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -362,7 +593,11 @@ pub fn run() {
             game_into_db,
             fetch_game,
             do_move,
-            undo_move
+            undo_move,
+            poll_analyzer,
+            set_analyzer_fen,
+            get_fen,
+            stop_analyzer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

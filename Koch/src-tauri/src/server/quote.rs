@@ -13,7 +13,7 @@ pub struct Quote {
     pub quote: String,
 }
 
-impl ServerState {
+impl ServerState<'_> {
     pub fn get_quote(&self) -> String {
         let default = String::from("black");
         let manifest_dir = env!("CARGO_MANIFEST_DIR");

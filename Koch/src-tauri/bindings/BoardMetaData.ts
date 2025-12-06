@@ -3,4 +3,4 @@ import type { GameResult } from "./GameResult";
 import type { MoveStruct } from "./MoveStruct";
 import type { TerminationBy } from "./TerminationBy";
 
-export type BoardMetaData = { starting_position: string, date: string, move_list: Array<MoveStruct>, termination: TerminationBy, result: GameResult, white_player_elo: number, black_player_elo: number, white_player_name: string, black_player_name: string, };
+export type BoardMetaData = { starting_position: string, date: string, move_list: Array<MoveStruct>, termination: TerminationBy, result: GameResult, white_player_elo: number, black_player_elo: number, white_player_name: string, black_player_name: string, opening: string | null, };

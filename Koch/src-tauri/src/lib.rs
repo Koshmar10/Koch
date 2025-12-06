@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod engine;
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
@@ -14,7 +15,9 @@ pub mod server;
 use crate::analyzer::board_interactions::{do_move, get_fen, undo_move, AnalyzerController};
 use crate::database::create::{get_game_by_id, get_game_list};
 use crate::engine::board::{BoardMetaData, EvalResponse, GameResult};
-use crate::server::server::{EngineCommand, PvObject};
+use crate::server::server::EvalKind;
+use crate::server::server::OpeningEntry;
+use crate::server::server::{EngineCommand, PvLineData, PvObject}; // Added PvLineData
 use crate::{
     engine::board,
     engine::{board::PieceMoves, Board, PieceColor, PieceType},
@@ -22,6 +25,7 @@ use crate::{
     server::server::ServerState,
 };
 use std::time::Duration;
+use stockfish::EngineOutput;
 use stockfish::Stockfish;
 use tauri::{Builder, Manager};
 
@@ -208,37 +212,52 @@ fn try_move(
     dest_square: (u8, u8),
 ) -> Option<Board> {
     let mut state = state.lock().unwrap();
-    let bc = &mut state.board;
 
     // Ensure move cache exists (prevents missing entries for sliding pieces)
-    if bc.move_cache.is_empty() {
-        bc.rerender_move_cache();
+    if state.board.move_cache.is_empty() {
+        state.board.rerender_move_cache();
     }
 
     // Capture target BEFORE moving (after move the destination holds the moving piece)
-    let captured_before = bc.squares[dest_square.0 as usize][dest_square.1 as usize].clone();
+    let captured_before =
+        state.board.squares[dest_square.0 as usize][dest_square.1 as usize].clone();
 
-    match bc.move_piece(src_square, dest_square) {
+    match state.board.move_piece(src_square, dest_square) {
         Ok(move_struct) => {
             if move_struct.is_capture {
                 if let Some(captured_piece) = captured_before {
                     match captured_piece.color {
-                        PieceColor::Black => bc
+                        PieceColor::Black => state
+                            .board
                             .ui
                             .white_taken
                             .push((captured_piece.kind, captured_piece.color)),
-                        PieceColor::White => bc
+                        PieceColor::White => state
+                            .board
                             .ui
                             .black_taken
                             .push((captured_piece.kind, captured_piece.color)),
                     }
                 }
             }
-            bc.meta_data.move_list.push(move_struct);
+            state.board.meta_data.move_list.push(move_struct);
             // Refresh move cache after a successful move
-            bc.rerender_move_cache();
-
-            Some(bc.clone())
+            state.board.rerender_move_cache();
+            match &state.opening_index {
+                Some(op_idx) => {
+                    let fen = &state.board.to_string();
+                    println!("{:?}", &fen);
+                    match op_idx.get(fen) {
+                        None => {}
+                        Some(op) => {
+                            state.board.meta_data.opening = Some(op.name.to_string());
+                            println!("{:?}", &state.board.meta_data.opening)
+                        }
+                    }
+                }
+                None => {}
+            }
+            Some(state.board.clone())
         }
         Err(err) => {
             // Optional: log error
@@ -394,6 +413,7 @@ pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<P
                                 println!("[Analyzer] FEN set");
                             }
                             current_fen = fen.clone();
+                            // Reset PV Object with new structure
                             current_pv = PvObject {
                                 fen,
                                 depth: 0,
@@ -444,8 +464,6 @@ pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<P
                 if line.is_empty() {
                     continue;
                 }
-                // Debug raw output
-                // println!("[Analyzer] Engine: {line}");
 
                 if line.starts_with("bestmove") {
                     println!("[Analyzer] bestmove received, search finished");
@@ -453,11 +471,16 @@ pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<P
                     continue;
                 }
 
+                // Parse MultiPV lines
                 if line.contains("multipv") && line.contains(" pv ") {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     let mut multipv_idx = 0;
                     let mut depth = 0;
                     let mut moves = String::new();
+
+                    // Default values for this specific line
+                    let mut score_value = 0;
+                    let mut score_kind = EvalKind::Centipawn;
 
                     for i in 0..parts.len() {
                         if parts[i] == "multipv" {
@@ -469,20 +492,34 @@ pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<P
                         }
                         if parts[i] == "pv" {
                             moves = parts[i + 1..].join(" ");
-                            break;
+                            break; // 'pv' is usually the last part
+                        }
+                        if parts[i] == "score" {
+                            match parts.get(i + 1) {
+                                Some(&"cp") => score_kind = EvalKind::Centipawn,
+                                _ => score_kind = EvalKind::Mate,
+                            }
+                            if let Some(val_str) = parts.get(i + 2) {
+                                score_value = val_str.parse().unwrap_or(0);
+                            }
                         }
                     }
 
                     if depth >= current_pv.depth {
                         current_pv.depth = depth;
-                        current_pv.lines.insert(multipv_idx, moves.clone());
+
+                        // Create the data object for this specific line
+                        let line_data = PvLineData {
+                            moves: moves,
+                            eval_kind: score_kind,
+                            eval_value: score_value,
+                        };
+
+                        // Insert into the map
+                        current_pv.lines.insert(multipv_idx, line_data);
+
                         if let Err(e) = update_tx.send(current_pv.clone()) {
                             eprintln!("[Analyzer] Failed to send update: {e}");
-                        } else {
-                            println!(
-                                "[Analyzer] Update sent: depth={}, multipv={}, moves={}",
-                                depth, multipv_idx, moves
-                            );
                         }
                     }
                 }
@@ -572,6 +609,7 @@ fn poll_analyzer(state: tauri::State<'_, Mutex<ServerState>>) -> Option<PvObject
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let (tx, rx) = start_analyzer_thread();
+
     tauri::Builder::default()
         .manage(Mutex::new(ServerState {
             analyzer_tx: Some(tx),

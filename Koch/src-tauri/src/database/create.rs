@@ -69,7 +69,7 @@ pub fn insert_game_and_get_id(game_data: &BoardMetaData) -> Result<i64> {
             &game_data.white_player_elo,
             &result,
             &termination,
-            "King's Pawn",
+            &game_data.opening,
         ],
     )?;
 
@@ -188,6 +188,7 @@ pub fn get_game_list() -> Result<Vec<BoardMetaData>> {
             white_player_name: row.get(4)?,
             black_player_elo: row.get(5)?,
             white_player_elo: row.get(6)?,
+            opening: row.get(9)?,
             ..Default::default()
         })
     })?;
@@ -257,6 +258,7 @@ pub fn get_game_by_id(id: usize) -> Result<BoardMetaData> {
             white_player_name: row.get(4)?,
             black_player_elo: row.get(5)?,
             white_player_elo: row.get(6)?,
+            opening: row.get(9)?,
             ..Default::default()
         })
     })?;

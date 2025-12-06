@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::engine::{
     board::{CastleType, PieceMoves},
-    Board, ChessPiece, PieceColor, PieceType,
+    piece, Board, ChessPiece, PieceColor, PieceType,
 };
 use ts_rs::TS;
 pub enum VerticalDirection {
@@ -43,7 +45,7 @@ impl Board {
                 for h in [HorizontalDirection::Left, HorizontalDirection::Right] {
                     all_moves.extend(self.get_rank_moves(piece, 1, h));
                 }
-
+                //added castle moves
                 all_moves
             }
             PieceType::Knight => self.get_knight_moves(piece),
@@ -86,23 +88,226 @@ impl Board {
         let moves = self.get_all_moves(piece);
 
         let quiet = self.filter_quiet_moves(piece, &moves);
-        let quiet = self.legalize_quiet_moves(piece, quiet);
+        let mut quiet = self.legalize_quiet_moves(piece, quiet);
 
         let captures = self.filter_capture_moves(piece, &moves);
         let captures = self.legalize_capture_moves(piece, captures);
 
         let attacks = self.get_attack_squares(piece);
 
+        //Treat caslte rights for piece
+        match piece.kind {
+            PieceType::King if piece.has_moved == false && !self.is_in_check(piece.color) => {
+                self.add_castle_options(piece.color, &mut quiet);
+            }
+            _ => {}
+        }
         return (quiet, captures);
     }
+    fn add_castle_options(&self, color: PieceColor, quiet_moves: &mut Vec<(u8, u8)>) {
+        match color {
+            PieceColor::Black => {
+                for rook_sq in &[(0, 0), (0, 7)] {
+                    if let Some(rook) = self.squares[rook_sq.0][rook_sq.1] {
+                        if rook.has_moved {
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+                }
+                //precompute color associated with piece ids
+                let mut id_color_map: HashMap<u32, PieceColor> = HashMap::new();
+                for row in &self.squares {
+                    for square in row {
+                        if let Some(sq) = square {
+                            id_color_map.insert(sq.id, sq.color);
+                        }
+                    }
+                }
+                //assume castleing rights to be true
+                let queen_travel_squares = [(0, 3), (0, 2)];
+                let king_travel_squares = [(0, 5), (0, 6)];
+                let mut can_castle_queen_side = true;
+                let mut can_castle_king_side = true;
+                // check if travel_squares are free
+                let mut kingside_free = true;
+                for travel_square in king_travel_squares {
+                    match self.squares[travel_square.0 as usize][travel_square.1 as usize] {
+                        Some(_) => {
+                            kingside_free = false;
+                            break;
+                        }
+                        None => {}
+                    }
 
+                    let keys = self.move_cache.keys();
+                    for key in keys {
+                        if let Some(x) = id_color_map.get(key) {
+                            if *x == color {
+                                continue;
+                            }
+                        }
+                        let piece_moves = self.move_cache.get(key);
+                        if let Some(moves) = piece_moves {
+                            if moves.attacks.contains(&travel_square) {
+                                kingside_free = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let mut queenside_free = true;
+                for travel_square in queen_travel_squares {
+                    match self.squares[travel_square.0 as usize][travel_square.1 as usize] {
+                        Some(_) => {
+                            queenside_free = false;
+                            break;
+                        }
+                        None => {}
+                    }
+
+                    let keys = self.move_cache.keys();
+                    for key in keys {
+                        if let Some(x) = id_color_map.get(key) {
+                            if *x == color {
+                                continue;
+                            }
+                        }
+                        let piece_moves = self.move_cache.get(key);
+                        if let Some(moves) = piece_moves {
+                            if moves.attacks.contains(&travel_square) {
+                                queenside_free = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                //check if is check or if any travel squares are affected
+
+                can_castle_king_side =
+                    can_castle_king_side && self.black_small_castle && kingside_free;
+                can_castle_queen_side =
+                    can_castle_queen_side && self.black_big_castle && queenside_free;
+
+                if can_castle_king_side {
+                    if let Some(&sq) = king_travel_squares.last() {
+                        quiet_moves.push(sq);
+                    }
+                }
+                if can_castle_queen_side {
+                    if let Some(&sq) = queen_travel_squares.last() {
+                        quiet_moves.push(sq);
+                    }
+                }
+            }
+            PieceColor::White => {
+                for rook_sq in &[(7, 0), (7, 7)] {
+                    if let Some(rook) = self.squares[rook_sq.0][rook_sq.1] {
+                        if rook.has_moved {
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+                }
+                //precompute color associated with piece ids
+                let mut id_color_map: HashMap<u32, PieceColor> = HashMap::new();
+                for row in &self.squares {
+                    for square in row {
+                        if let Some(sq) = square {
+                            id_color_map.insert(sq.id, sq.color);
+                        }
+                    }
+                }
+                // white travel squares on rank 7 (e1 -> g1 or c1)
+                let queen_travel_squares = [(7, 3), (7, 2)];
+                let king_travel_squares = [(7, 5), (7, 6)];
+                let mut can_castle_queen_side = true;
+                let mut can_castle_king_side = true;
+
+                // kingside path free and not attacked
+                let mut kingside_free = true;
+                for travel_square in king_travel_squares {
+                    match self.squares[travel_square.0 as usize][travel_square.1 as usize] {
+                        Some(_) => {
+                            kingside_free = false;
+                            break;
+                        }
+                        None => {}
+                    }
+
+                    let keys = self.move_cache.keys();
+                    for key in keys {
+                        if let Some(x) = id_color_map.get(key) {
+                            if *x == color {
+                                continue;
+                            }
+                        }
+                        let piece_moves = self.move_cache.get(key);
+                        if let Some(moves) = piece_moves {
+                            if moves.attacks.contains(&travel_square) {
+                                kingside_free = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // queenside path free and not attacked
+                let mut queenside_free = true;
+                for travel_square in queen_travel_squares {
+                    match self.squares[travel_square.0 as usize][travel_square.1 as usize] {
+                        Some(_) => {
+                            queenside_free = false;
+                            break;
+                        }
+                        None => {}
+                    }
+
+                    let keys = self.move_cache.keys();
+                    for key in keys {
+                        if let Some(x) = id_color_map.get(key) {
+                            if *x == color {
+                                continue;
+                            }
+                        }
+                        let piece_moves = self.move_cache.get(key);
+                        if let Some(moves) = piece_moves {
+                            if moves.attacks.contains(&travel_square) {
+                                queenside_free = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                can_castle_king_side =
+                    can_castle_king_side && self.white_small_castle && kingside_free;
+                can_castle_queen_side =
+                    can_castle_queen_side && self.white_big_castle && queenside_free;
+
+                if can_castle_king_side {
+                    if let Some(&sq) = king_travel_squares.last() {
+                        quiet_moves.push(sq);
+                    }
+                }
+                if can_castle_queen_side {
+                    if let Some(&sq) = queen_travel_squares.last() {
+                        quiet_moves.push(sq);
+                    }
+                }
+            }
+        }
+    }
     pub fn lega_capture_moves(&self, piece: &ChessPiece) -> Vec<(u8, u8)> {
         let moves = self.get_all_moves(piece);
         let captures = self.filter_capture_moves(piece, &moves);
         let captures = self.legalize_capture_moves(piece, captures);
         return captures;
     }
-
+    
     pub fn get_diagonal_moves(
         &self,
         piece: &ChessPiece,

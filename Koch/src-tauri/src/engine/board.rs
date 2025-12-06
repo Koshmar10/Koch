@@ -100,6 +100,7 @@ pub struct BoardMetaData {
     pub black_player_elo: u32,
     pub white_player_name: String,
     pub black_player_name: String,
+    pub opening: Option<String>,
 }
 
 #[derive(Clone, TS, Serialize, Deserialize, Debug)]
@@ -171,6 +172,7 @@ impl Default for BoardMetaData {
             black_player_elo: 0,
             white_player_name: String::new(),
             black_player_name: String::new(),
+            opening: None,
         }
     }
 }
@@ -249,6 +251,42 @@ impl Board {
 
         if !is_capture && !is_quiet {
             return Err(MoveError::IllegalMove);
+        }
+        if is_quiet
+            && moving_piece.kind == PieceType::King
+            && self.is_player_castle(old_pos, new_pos)
+        {
+            // Clear en passant; castling does not set one
+            self.en_passant_target = None;
+
+            // Halfmove clock: castling is not a pawn move nor a capture, so +1
+            self.halfmove_clock = self.halfmove_clock.saturating_add(1);
+
+            // Execute castle (moves king and rook + updates rights)
+            self.execute_player_castle(old_pos, new_pos);
+
+            // Turn/Fullmove updates
+            let was_black = self.turn == PieceColor::Black;
+            self.deselect_piece();
+            self.change_turn();
+            if was_black {
+                self.fullmove_number = self.fullmove_number.saturating_add(1);
+            }
+
+            self.been_modified = true;
+
+            return Ok(MoveStruct {
+                move_number: self.ply_count,
+                uci: self.encode_uci_move(old_pos, new_pos, None), // e1g1/e1c1/e8g8/e8c8
+                san: String::new(), // optional: set to "O-O" or "O-O-O" later
+                promotion: None,
+                is_capture: false,
+                evaluation: EvalResponse {
+                    value: 0.0,
+                    kind: EvalType::Centipawn,
+                },
+                time_stamp: 0.0,
+            });
         }
 
         let mut captured_piece: Option<ChessPiece> = None;
@@ -378,133 +416,9 @@ impl Board {
         })
     }
 
-    pub fn try_castle(&mut self, king_pos: (u8, u8), rook_pos: (u8, u8)) -> bool {
-        if self.can_castle(king_pos, rook_pos) {
-            self.execute_castle(king_pos, rook_pos);
-        } else {
-            return false;
-        }
-
-        return true;
-    }
     /// Returns true if `sq` is attacked by any piece of `by_color`
-    fn is_square_attacked_by(&self, sq: (u8, u8), by_color: PieceColor) -> bool {
-        for rank in 0..8 {
-            for file in 0..8 {
-                if let Some(p) = self.squares[rank][file] {
-                    if p.color != by_color {
-                        continue;
-                    }
-                    match p.kind {
-                        PieceType::Pawn => {
-                            // White pawns attack up-left/up-right; Black down-left/down-right
-                            let (r, c) = (p.position.0 as i8, p.position.1 as i8);
-                            let dir = if by_color == PieceColor::White { -1 } else { 1 };
-                            let attacks = [(r + dir, c - 1), (r + dir, c + 1)];
-                            for (ar, ac) in attacks {
-                                if (0..8).contains(&ar) && (0..8).contains(&ac) {
-                                    if (ar as u8, ac as u8) == sq {
-                                        return true;
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            // Use pseudo moves for attack map (good for N,B,R,Q,K)
-                            if self.get_all_moves(&p).contains(&sq) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
 
-    pub fn can_castle(&self, king_pos: (u8, u8), rook_pos: (u8, u8)) -> bool {
-        // Get the king and rook pieces
-        let (king, rook) = match (
-            self.squares[king_pos.0 as usize][king_pos.1 as usize].as_ref(),
-            self.squares[rook_pos.0 as usize][rook_pos.1 as usize].as_ref(),
-        ) {
-            (Some(k), Some(r)) if k.kind == PieceType::King && r.kind == PieceType::Rook => (k, r),
-            _ => {
-                return false;
-            }
-        };
-
-        // Must be same color and current side to move
-        if king.color != self.turn || rook.color != self.turn {
-            return false;
-        }
-        // Pieces must not have moved
-        if king.has_moved || rook.has_moved {
-            return false;
-        }
-
-        // Check squares are the standard ones (e1/e8 with a1/h1 or a8/h8)
-        let castle_squares: [((u8, u8), (u8, u8)); 2] = match self.turn {
-            PieceColor::Black => [((0, 4), (0, 0)), ((0, 4), (0, 7))],
-            PieceColor::White => [((7, 4), (7, 0)), ((7, 4), (7, 7))],
-        };
-        if !castle_squares.contains(&(king_pos, rook_pos)) {
-            return false;
-        }
-
-        // Check castling rights flags
-        let castle_type = if king_pos.1.abs_diff(rook_pos.1) == 4 {
-            CastleType::QueenSide
-        } else {
-            CastleType::KingSide
-        };
-        match (self.turn, &castle_type) {
-            (PieceColor::White, CastleType::KingSide) if !self.white_small_castle => return false,
-            (PieceColor::White, CastleType::QueenSide) if !self.white_big_castle => return false,
-            (PieceColor::Black, CastleType::KingSide) if !self.black_small_castle => return false,
-            (PieceColor::Black, CastleType::QueenSide) if !self.black_big_castle => return false,
-            _ => {}
-        }
-
-        // Path between king and rook must be empty
-        let range = if rook_pos.1 < king_pos.1 {
-            (rook_pos.1 + 1)..king_pos.1 // queenside: b..d
-        } else {
-            (king_pos.1 + 1)..rook_pos.1 // kingside: f..g
-        };
-        for file in range {
-            if self.squares[king_pos.0 as usize][file as usize].is_some() {
-                return false;
-            }
-        }
-
-        // King cannot be in check, and transit/destination squares must not be attacked
-        if self.is_in_check(self.turn) {
-            return false;
-        }
-
-        let opponent = match self.turn {
-            PieceColor::White => PieceColor::Black,
-            PieceColor::Black => PieceColor::White,
-        };
-        // Transit and destination files for king: d,c (queenside) or f,g (kingside)
-        let (t1, t2) = match castle_type {
-            CastleType::QueenSide => (king_pos.1 - 1, king_pos.1 - 2), // d, c
-            CastleType::KingSide => (king_pos.1 + 1, king_pos.1 + 2),  // f, g
-        };
-
-        let transit1 = (king_pos.0, t1);
-        let transit2 = (king_pos.0, t2);
-
-        if self.is_square_attacked_by(transit1, opponent) {
-            return false;
-        }
-        if self.is_square_attacked_by(transit2, opponent) {
-            return false;
-        }
-
-        true
-    }
+    /*
     pub fn execute_castle(&mut self, king_pos: (u8, u8), rook_pos: (u8, u8)) {
         // Determine castle type based on king and rook positions
         let castle_type = if king_pos.1.abs_diff(rook_pos.1) == 4 {
@@ -545,6 +459,155 @@ impl Board {
         }
 
         self.been_modified = true;
+    }
+    */
+    pub fn is_player_castle(&self, from: (u8, u8), to: (u8, u8)) -> bool {
+        matches!(
+            (from, to),
+            ((0, 4), (0, 6)) | ((0, 4), (0, 2)) | ((7, 4), (7, 6)) | ((7, 4), (7, 2))
+        )
+    }
+    pub fn is_engine_castle(&self, uci: &str) -> bool {
+        matches!(uci, "e1g1" | "e1c1" | "e8g8" | "e8c8")
+    }
+    pub fn execute_player_castle(&mut self, from: (u8, u8), to: (u8, u8)) {
+        match (from, to) {
+            // King-side castle
+            ((r, 4), (rr, 6)) if r == rr => {
+                // Move king
+                if let Some(mut king) = self.squares[r as usize][4].take() {
+                    king.position = (r, 6);
+                    king.has_moved = true;
+                    self.squares[r as usize][6] = Some(king);
+                }
+
+                // Move rook from h-file to f-file
+                if let Some(mut rook) = self.squares[r as usize][7].take() {
+                    rook.position = (r, 5);
+                    rook.has_moved = true;
+                    self.squares[r as usize][5] = Some(rook);
+                }
+
+                // Update castling rights
+                if r == 7 {
+                    self.white_small_castle = false;
+                    self.white_big_castle = false;
+                } else {
+                    self.black_small_castle = false;
+                    self.black_big_castle = false;
+                }
+
+                self.been_modified = true;
+            }
+
+            // Queen-side castle
+            ((r, 4), (rr, 2)) if r == rr => {
+                // Move king
+                if let Some(mut king) = self.squares[r as usize][4].take() {
+                    king.position = (r, 2);
+                    king.has_moved = true;
+                    self.squares[r as usize][2] = Some(king);
+                }
+
+                // Move rook from a-file to d-file
+                if let Some(mut rook) = self.squares[r as usize][0].take() {
+                    rook.position = (r, 3);
+                    rook.has_moved = true;
+                    self.squares[r as usize][3] = Some(rook);
+                }
+
+                // Update castling rights
+                if r == 7 {
+                    self.white_small_castle = false;
+                    self.white_big_castle = false;
+                } else {
+                    self.black_small_castle = false;
+                    self.black_big_castle = false;
+                }
+
+                self.been_modified = true;
+            }
+
+            _ => {}
+        }
+    }
+
+    pub fn execute_engine_castle(&mut self, uci: &str) {
+        match uci {
+            // White king-side: e1g1
+            "e1g1" => {
+                // Move king
+                if let Some(mut king) = self.squares[7][4].take() {
+                    king.position = (7, 6);
+                    king.has_moved = true;
+                    self.squares[7][6] = Some(king);
+                }
+                // Move rook h1 -> f1
+                if let Some(mut rook) = self.squares[7][7].take() {
+                    rook.position = (7, 5);
+                    rook.has_moved = true;
+                    self.squares[7][5] = Some(rook);
+                }
+                self.white_small_castle = false;
+                self.white_big_castle = false;
+                self.been_modified = true;
+            }
+            // White queen-side: e1c1
+            "e1c1" => {
+                // Move king
+                if let Some(mut king) = self.squares[7][4].take() {
+                    king.position = (7, 2);
+                    king.has_moved = true;
+                    self.squares[7][2] = Some(king);
+                }
+                // Move rook a1 -> d1
+                if let Some(mut rook) = self.squares[7][0].take() {
+                    rook.position = (7, 3);
+                    rook.has_moved = true;
+                    self.squares[7][3] = Some(rook);
+                }
+                self.white_small_castle = false;
+                self.white_big_castle = false;
+                self.been_modified = true;
+            }
+            // Black king-side: e8g8
+            "e8g8" => {
+                // Move king
+                if let Some(mut king) = self.squares[0][4].take() {
+                    king.position = (0, 6);
+                    king.has_moved = true;
+                    self.squares[0][6] = Some(king);
+                }
+                // Move rook h8 -> f8
+                if let Some(mut rook) = self.squares[0][7].take() {
+                    rook.position = (0, 5);
+                    rook.has_moved = true;
+                    self.squares[0][5] = Some(rook);
+                }
+                self.black_small_castle = false;
+                self.black_big_castle = false;
+                self.been_modified = true;
+            }
+            // Black queen-side: e8c8
+            "e8c8" => {
+                // Move king
+                if let Some(mut king) = self.squares[0][4].take() {
+                    king.position = (0, 2);
+                    king.has_moved = true;
+                    self.squares[0][2] = Some(king);
+                }
+                // Move rook a8 -> d8
+                if let Some(mut rook) = self.squares[0][0].take() {
+                    rook.position = (0, 3);
+                    rook.has_moved = true;
+                    self.squares[0][3] = Some(rook);
+                }
+                self.black_small_castle = false;
+                self.black_big_castle = false;
+                self.been_modified = true;
+            }
+            _ => {}
+        }
     }
 
     pub fn change_turn(&mut self) {

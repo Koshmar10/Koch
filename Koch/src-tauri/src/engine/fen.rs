@@ -167,7 +167,7 @@ impl Board {
         // Optionally update meta data/UI
         self.meta_data = BoardMetaData::default();
         self.meta_data.starting_position = fen;
-        self.ui = BoardUi::default();
+        //self.ui = BoardUi::default();
     }
 }
 pub fn fen_parser(fen: &String) -> Result<Board, FenError> {

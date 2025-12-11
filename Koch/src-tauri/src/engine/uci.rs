@@ -52,7 +52,7 @@ impl Board {
             self.promote_pawn(to, promotion_piece);
 
             // Mark that promotion is handled
-            self.ui.promtion_pending = None;
+           // self.ui.promtion_pending = None;
 
             return Some((from, to));
         }

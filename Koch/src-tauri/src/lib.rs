@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
+use std::time::Instant;
 
 //pub mod game;
 pub mod analyzer;
@@ -11,10 +12,12 @@ pub mod database;
 pub mod etc;
 pub mod game;
 pub mod server;
-
-use crate::analyzer::board_interactions::{do_move, get_fen, undo_move, AnalyzerController};
+use crate::analyzer::board_interactions::{get_board_at_index, get_fen, AnalyzerController};
 use crate::database::create::{get_game_by_id, get_game_list};
 use crate::engine::board::{BoardMetaData, EvalResponse, GameResult};
+use crate::engine::move_gen;
+use crate::engine::serializer::serialize_board;
+use crate::engine::serializer::SerializedBoard;
 use crate::server::server::EvalKind;
 use crate::server::server::OpeningEntry;
 use crate::server::server::{EngineCommand, PvLineData, PvObject}; // Added PvLineData
@@ -24,10 +27,11 @@ use crate::{
     game::controller::{GameController, TerminationBy},
     server::server::ServerState,
 };
+use std::collections::BTreeMap;
 use std::time::Duration;
 use stockfish::EngineOutput;
 use stockfish::Stockfish;
-use tauri::{Builder, Manager};
+use tauri::{AppHandle, Builder, Emitter, Manager, Window};
 
 fn make_engine_move(state: &mut ServerState, fen: String) -> Option<String> {
     let engine = &mut state.engine;
@@ -90,13 +94,15 @@ fn start_game(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Option<Gam
     (state.board.clone(), state.game_controller.clone())
 }
 #[tauri::command]
-fn update_gameloop(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Option<GameController>) {
+fn update_gameloop(
+    state: tauri::State<'_, Mutex<ServerState>>,
+) -> (SerializedBoard, Option<GameController>) {
     let mut state = state.lock().unwrap();
     let mut game = state.game_controller.clone();
     let game_over = game.as_ref().unwrap().game_over;
     match &mut game {
         Some(game) => {
-            if state.board.is_chackmate() {
+            if state.board.is_checkmate() {
                 game.lost_by = Some(TerminationBy::Checkmate);
                 state.board.meta_data.result = match &state.board.turn {
                     PieceColor::Black => board::GameResult::WhiteWin,
@@ -105,7 +111,7 @@ fn update_gameloop(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Optio
                 state.board.meta_data.termination = board::TerminationBy::Checkmate;
                 game.game_over = true;
             }
-            if state.board.is_stale_mate() {
+            if state.board.is_stalemate() {
                 game.lost_by = Some(TerminationBy::StaleMate);
                 state.board.meta_data.termination = board::TerminationBy::StaleMate;
                 state.board.meta_data.result = GameResult::Draw;
@@ -115,11 +121,11 @@ fn update_gameloop(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Optio
         None => {}
     }
     if game_over {
-        return (state.board.clone(), game);
+        return (serialize_board(&state.board), game);
     }
     // If no game controller, just return current board
     if state.game_controller.is_none() {
-        return (state.board.clone(), game);
+        return (serialize_board(&state.board), game);
     }
 
     let player_color = state.game_controller.as_ref().unwrap().player;
@@ -133,7 +139,7 @@ fn update_gameloop(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Optio
             g.in_check = in_check;
         }
 
-        return (state.board.clone(), game);
+        return (serialize_board(&state.board), game);
     }
 
     // Engine's turn
@@ -178,7 +184,7 @@ fn update_gameloop(state: tauri::State<'_, Mutex<ServerState>>) -> (Board, Optio
         }
     };
 
-    return (state.board.clone(), game);
+    return (serialize_board(&state.board), game);
 }
 #[tauri::command]
 fn load_fen(state: tauri::State<'_, Mutex<ServerState>>, fen: String) -> Board {
@@ -210,7 +216,8 @@ fn try_move(
     state: tauri::State<'_, Mutex<ServerState>>,
     src_square: (u8, u8),
     dest_square: (u8, u8),
-) -> Option<Board> {
+    promotion: Option<PieceType>,
+) -> Option<SerializedBoard> {
     let mut state = state.lock().unwrap();
 
     // Ensure move cache exists (prevents missing entries for sliding pieces)
@@ -223,7 +230,7 @@ fn try_move(
         state.board.squares[dest_square.0 as usize][dest_square.1 as usize].clone();
 
     match state.board.move_piece(src_square, dest_square) {
-        Ok(move_struct) => {
+        Ok(mut move_struct) => {
             if move_struct.is_capture {
                 if let Some(captured_piece) = captured_before {
                     match captured_piece.color {
@@ -239,6 +246,13 @@ fn try_move(
                             .push((captured_piece.kind, captured_piece.color)),
                     }
                 }
+            }
+            if promotion.is_some() {
+                state.board.promote_pawn(dest_square, promotion.unwrap());
+                move_struct.promotion = promotion;
+                move_struct.uci = state
+                    .board
+                    .encode_uci_move(src_square, dest_square, promotion)
             }
             state.board.meta_data.move_list.push(move_struct);
             // Refresh move cache after a successful move
@@ -257,7 +271,9 @@ fn try_move(
                 }
                 None => {}
             }
-            Some(state.board.clone())
+            let sb = serialize_board(&state.board);
+            dbg!(&sb);
+            Some(sb)
         }
         Err(err) => {
             // Optional: log error
@@ -268,6 +284,16 @@ fn try_move(
             None
         }
     }
+}
+#[derive(Default)]
+struct MyState {
+    s: std::sync::Mutex<String>,
+    t: std::sync::Mutex<std::collections::HashMap<String, String>>,
+}
+// remember to call `.manage(MyState::default())`
+#[tauri::command]
+fn board_fen(board: Board) -> String {
+    return board.to_string();
 }
 #[tauri::command]
 fn game_into_db(state: tauri::State<'_, Mutex<ServerState>>) -> Result<(), String> {
@@ -342,6 +368,14 @@ fn fetch_game_history() -> Vec<BoardMetaData> {
     }
 }
 #[tauri::command]
+fn fetch_default_game(state: tauri::State<'_, Mutex<ServerState>>) -> AnalyzerController {
+    let mut state = state.lock().unwrap();
+    let mut analyzer = AnalyzerController::default();
+    analyzer.board.rerender_move_cache();
+    state.analyzer_controller = analyzer.clone();
+    analyzer
+}
+#[tauri::command]
 fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> AnalyzerController {
     let mut state = state.lock().unwrap();
     if state.analyzer_controller.game_id == id {
@@ -354,8 +388,7 @@ fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> Analyze
             board.meta_data = list; // includes full move_list from DB
             analyzer.board = board;
             analyzer.game_id = id;
-            analyzer.current_ply = 0;
-            analyzer.taken_piece_stack.clear();
+            analyzer.current_ply = -1;
 
             // Persist so do_move/undo_move operate on the same instance
             state.analyzer_controller = analyzer.clone();
@@ -367,256 +400,275 @@ fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> Analyze
         }
     }
 }
-pub fn start_analyzer_thread() -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<PvObject>) {
+pub fn start_analyzer_thread(
+    app_handle: AppHandle,
+) -> (mpsc::Sender<EngineCommand>, mpsc::Receiver<PvObject>) {
     let (cmd_tx, cmd_rx): (mpsc::Sender<EngineCommand>, mpsc::Receiver<EngineCommand>) =
         mpsc::channel();
     let (update_tx, update_rx): (mpsc::Sender<PvObject>, mpsc::Receiver<PvObject>) =
         mpsc::channel();
 
-    thread::spawn(move || {
-        println!("[Analyzer] Thread starting...");
-        let mut engine = match Stockfish::new("/usr/bin/stockfish") {
-            Ok(e) => {
-                println!("[Analyzer] Stockfish started");
-                e
-            }
-            Err(e) => {
-                eprintln!("[Analyzer] Failed to start engine: {e}");
-                return;
-            }
-        };
+    thread::Builder::new()
+        .name("analyzer-thread".to_string())
+        .spawn(move || {
+            // Wrap the entire thread logic in catch_unwind
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                println!("[Analyzer] Thread starting...");
+                let mut engine = match Stockfish::new("/usr/bin/stockfish") {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("[Analyzer] Failed to start engine: {e}");
+                        return;
+                    }
+                };
 
-        // Setup Options
-        if let Err(e) = engine.set_option("Threads", "6") {
-            eprintln!("[Analyzer] Failed to set Threads: {e}");
-        }
-        if let Err(e) = engine.set_option("Hash", "1024") {
-            eprintln!("[Analyzer] Failed to set Hash: {e}");
-        }
-        if let Err(e) = engine.set_option("MultiPV", "3") {
-            eprintln!("[Analyzer] Failed to set MultiPV: {e}");
-        }
+                // ---- Engine options: tune once ----
+                let _ = engine.set_option("Threads", "6");
+                let _ = engine.set_option("Hash", "512");
+                let _ = engine.set_option("MultiPV", "3");
 
-        let mut is_searching = false;
-        let mut current_fen = String::new();
-        let mut current_pv = PvObject::default();
+                let mut is_searching = false;
+                let mut current_fen = String::new();
+                let mut current_pv = PvObject::default();
 
-        loop {
-            match cmd_rx.try_recv() {
-                Ok(command) => {
-                    println!("[Analyzer] Command received: {:?}", command);
-                    match command {
-                        EngineCommand::SetFen(fen) => {
-                            if let Err(e) = engine.set_fen_position(&fen) {
-                                eprintln!("[Analyzer] set_fen_position error: {e}");
-                            } else {
-                                println!("[Analyzer] FEN set");
-                            }
-                            current_fen = fen.clone();
-                            // Reset PV Object with new structure
-                            current_pv = PvObject {
-                                fen,
-                                depth: 0,
-                                lines: std::collections::HashMap::new(),
-                            };
-                        }
-                        EngineCommand::GoInfinite => match engine.ensure_ready() {
-                            Ok(_) => {
-                                println!("[Analyzer] Engine ready");
-                                if let Err(e) = engine.uci_send("go infinite") {
-                                    eprintln!("[Analyzer] go infinite error: {e}");
-                                } else {
-                                    println!("[Analyzer] Search started");
+                loop {
+                    // ---- 1. Commands from UI ----
+                    match cmd_rx.try_recv() {
+                        Ok(command) => {
+                            let ts = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or(Duration::ZERO)
+                                .as_secs_f64();
+                            println!("[Analyzer][{ts:.3}] Command received: {:?}", command);
+                            match command {
+                                EngineCommand::SetFen(fen) => {
+                                    if is_searching {
+                                        if let Err(e) = engine.uci_send("stop") {
+                                            eprintln!("Failed to send stop: {e}");
+                                        }
+                                        loop {
+                                            let line = engine.read_line();
+                                            if line.starts_with("bestmove") {
+                                                break;
+                                            }
+                                        }
+                                        is_searching = false;
+                                    }
+
+                                    let _ = engine.set_fen_position(&fen);
+                                    current_fen = fen;
+                                    current_pv = PvObject {
+                                        fen: current_fen.clone(),
+                                        depth: 0,
+                                        lines: HashMap::new(),
+                                    };
+                                    let _ = app_handle.emit("pv_update", current_pv.clone());
+                                }
+                                EngineCommand::GoInfinite => {
+                                    let _ = engine.uci_send("go infinite");
                                     is_searching = true;
                                 }
-                            }
-                            Err(e) => {
-                                eprintln!("[Analyzer] ensure_ready error: {e}");
-                            }
-                        },
-                        EngineCommand::Stop => {
-                            if is_searching {
-                                if let Err(e) = engine.uci_send("stop") {
-                                    eprintln!("[Analyzer] stop error: {e}");
-                                } else {
-                                    println!("[Analyzer] Stop sent");
-                                    is_searching = false;
+                                EngineCommand::Stop => {
+                                    if is_searching {
+                                        let _ = engine.uci_send("stop");
+                                        loop {
+                                            let line = engine.read_line();
+                                            if line.starts_with("bestmove") {
+                                                break;
+                                            }
+                                        }
+                                        is_searching = false;
+                                    }
                                 }
-                            } else {
-                                println!("[Analyzer] Stop ignored (not searching)");
+                                EngineCommand::Quit => break,
+                                EngineCommand::Snapshot => {
+                                    let _ = app_handle.emit("pv_update", current_pv.clone());
+                                    let _ = update_tx.send(current_pv.clone());
+                                }
                             }
                         }
-                        EngineCommand::Quit => {
-                            println!("[Analyzer] Quit received, exiting thread");
-                            break;
+                        Err(mpsc::TryRecvError::Empty) => {}
+                        Err(mpsc::TryRecvError::Disconnected) => break,
+                    }
+
+                    // ---- 2. Read streaming PV lines ----
+                    if is_searching {
+                        let color_multiplier = if current_fen.contains(" w ") { 1 } else { -1 };
+                        let line = engine.read_line();
+                        if line.is_empty() {
+                            continue;
                         }
+                        if line.starts_with("bestmove") {
+                            // This should only happen if the engine stops on its own (mate/draw/crash)
+                            // or if we missed a flush logic above.
+                            is_searching = false;
+                            continue;
+                        }
+
+                        if line.contains(" multipv ") && line.contains(" pv ") {
+                            // ...existing parsing logic...
+                            let parts: Vec<&str> = line.split_whitespace().collect();
+                            let mut multipv_idx: u8 = 1;
+                            let mut depth: u32 = 0;
+                            let mut moves = String::new();
+                            let mut score_value: i32 = 0;
+                            let mut score_kind = EvalKind::Centipawn;
+
+                            let mut i = 0;
+                            while i < parts.len() {
+                                match parts[i] {
+                                    "multipv" if i + 1 < parts.len() => {
+                                        multipv_idx = parts[i + 1].parse().unwrap_or(1);
+                                        i += 1;
+                                    }
+                                    "depth" if i + 1 < parts.len() => {
+                                        depth = parts[i + 1].parse().unwrap_or(0);
+                                        i += 1;
+                                    }
+                                    "score" if i + 2 < parts.len() => {
+                                        score_kind = if parts[i + 1] == "mate" {
+                                            EvalKind::Mate
+                                        } else {
+                                            EvalKind::Centipawn
+                                        };
+                                        score_value = parts[i + 2].parse().unwrap_or(0);
+                                        i += 2;
+                                    }
+                                    "pv" => {
+                                        moves = parts[i + 1..].join(" ");
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+
+                            if depth >= current_pv.depth {
+                                current_pv.depth = depth;
+                                let line_data = PvLineData {
+                                    moves,
+                                    eval_kind: score_kind,
+                                    eval_value: score_value * color_multiplier,
+                                };
+                                current_pv.lines.insert(multipv_idx, line_data);
+
+                                // Sort and trim logic...
+
+                                // EMIT EVENT: Send live update to frontend
+                                let _ = app_handle.emit("pv_update", current_pv.clone());
+                            }
+                        }
+                    } else {
+                        // When idle, sleep a bit to reduce CPU usage
+                        thread::sleep(Duration::from_millis(10));
                     }
                 }
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    eprintln!("[Analyzer] Command channel disconnected, exiting thread");
-                    break;
-                }
+                println!("[Analyzer] Thread exited normally");
+            }));
+
+            if let Err(e) = result {
+                eprintln!("[Analyzer] CRITICAL: Thread panicked! {:?}", e);
             }
+        })
+        .expect("Failed to spawn analyzer thread");
 
-            if is_searching {
-                let line = engine.read_line();
-                if line.is_empty() {
-                    continue;
-                }
-
-                if line.starts_with("bestmove") {
-                    println!("[Analyzer] bestmove received, search finished");
-                    is_searching = false;
-                    continue;
-                }
-
-                // Parse MultiPV lines
-                if line.contains("multipv") && line.contains(" pv ") {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    let mut multipv_idx = 0;
-                    let mut depth = 0;
-                    let mut moves = String::new();
-
-                    // Default values for this specific line
-                    let mut score_value = 0;
-                    let mut score_kind = EvalKind::Centipawn;
-
-                    for i in 0..parts.len() {
-                        if parts[i] == "multipv" {
-                            multipv_idx =
-                                parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(1);
-                        }
-                        if parts[i] == "depth" {
-                            depth = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                        }
-                        if parts[i] == "pv" {
-                            moves = parts[i + 1..].join(" ");
-                            break; // 'pv' is usually the last part
-                        }
-                        if parts[i] == "score" {
-                            match parts.get(i + 1) {
-                                Some(&"cp") => score_kind = EvalKind::Centipawn,
-                                _ => score_kind = EvalKind::Mate,
-                            }
-                            if let Some(val_str) = parts.get(i + 2) {
-                                score_value = val_str.parse().unwrap_or(0);
-                            }
-                        }
-                    }
-
-                    if depth >= current_pv.depth {
-                        current_pv.depth = depth;
-
-                        // Create the data object for this specific line
-                        let line_data = PvLineData {
-                            moves: moves,
-                            eval_kind: score_kind,
-                            eval_value: score_value,
-                        };
-
-                        // Insert into the map
-                        current_pv.lines.insert(multipv_idx, line_data);
-
-                        if let Err(e) = update_tx.send(current_pv.clone()) {
-                            eprintln!("[Analyzer] Failed to send update: {e}");
-                        }
-                    }
-                }
-            } else {
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-        println!("[Analyzer] Thread exited");
-    });
     (cmd_tx, update_rx)
 }
+
 #[tauri::command]
-fn set_analyzer_fen(state: tauri::State<'_, Mutex<ServerState>>, fen: &str) {
-    println!("set commandt tried");
+fn set_analyzer_fen(state: tauri::State<'_, Mutex<ServerState>>, fen: String) -> bool {
     let mut state = state.lock().unwrap();
-    match &state.analyzer_tx {
-        Some(rx) => {
-            match rx.send(EngineCommand::Stop) {
-                Ok(res) => {
-                    println!("analyzer stopped");
-                }
-                Err(e) => {
-                    println!("error on stop");
-                }
-            };
-            match rx.send(EngineCommand::SetFen(fen.to_string())) {
-                Ok(res) => {
-                    println!("set fen on thread ok");
-                }
-                Err(e) => {
-                    println!("set fen on thread err");
-                }
-            }
-            match rx.send(EngineCommand::GoInfinite) {
-                Ok(res) => {
-                    println!("analyzer started for new fen");
-                }
-                Err(e) => {
-                    println!("error when trying to start");
-                }
-            };
-        }
-        None => {
-            println!("not tx");
-        }
+    let Some(tx) = &state.analyzer_tx else {
+        eprintln!("[Analyzer] tx missing");
+        return false;
+    };
+
+    // Instead of Stop + GoInfinite, do a quick, synchronized refresh:
+    // 1) Set position
+    if tx.send(EngineCommand::SetFen(fen)).is_err() {
+        eprintln!("[Analyzer] SetFen send failed");
+        return false;
     }
+    // 2) Kick a short search to stabilize PV (thread handles go movetime internally)
+    if tx.send(EngineCommand::GoInfinite).is_err() {
+        eprintln!("[Analyzer] Go send failed");
+        return false;
+    }
+    true
 }
 
 #[tauri::command]
 fn stop_analyzer(state: tauri::State<'_, Mutex<ServerState>>) -> bool {
-    // println!("poll commandt tried"); // Optional: remove spam logs
     let mut state = state.lock().unwrap();
     match &state.analyzer_tx {
-        Some(tx) => {
-            match tx.send(EngineCommand::Stop) {
-                Ok(res) => {
-                    println!("analyzer stopped");
-                    return true;
-                }
-                Err(e) => {
-                    println!("error on stop");
-                    return true;
-                }
-            };
+        Some(tx) => match tx.send(EngineCommand::Stop) {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("[Analyzer] stop_analyzer send failed: {e}");
+                false
+            }
+        },
+        None => {
+            eprintln!("[Analyzer] stop_analyzer: tx missing");
+            false
         }
-        None => return false,
     }
 }
 
 #[tauri::command]
 fn poll_analyzer(state: tauri::State<'_, Mutex<ServerState>>) -> Option<PvObject> {
-    // println!("poll commandt tried"); // Optional: remove spam logs
     let mut state = state.lock().unwrap();
-    match &state.analyzer_rx {
-        Some(rx) => {
-            let mut latest = None;
-            // DRAIN the channel: keep reading until empty to get the freshest data
-            while let Ok(msg) = rx.try_recv() {
-                latest = Some(msg);
+    let (tx_opt, rx_opt) = (state.analyzer_tx.as_ref(), state.analyzer_rx.as_ref());
+    let (Some(tx), Some(rx)) = (tx_opt, rx_opt) else {
+        return None;
+    };
+
+    // Ask thread for a snapshot
+    if tx.send(EngineCommand::Snapshot).is_err() {
+        eprintln!("[Analyzer] Snapshot send failed");
+        return None;
+    }
+
+    // Try to receive the single snapshot (with small wait loop)
+    let start = Instant::now();
+    loop {
+        match rx.try_recv() {
+            Ok(pv) => return Some(pv),
+            Err(mpsc::TryRecvError::Empty) => {
+                if start.elapsed() > Duration::from_millis(200) {
+                    // Timeout: no snapshot arrived
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(5));
             }
-            latest
+            Err(mpsc::TryRecvError::Disconnected) => {
+                eprintln!("[Analyzer] Snapshot channel disconnected");
+                return None;
+            }
         }
-        None => None,
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (tx, rx) = start_analyzer_thread();
-
     tauri::Builder::default()
-        .manage(Mutex::new(ServerState {
-            analyzer_tx: Some(tx),
-            analyzer_rx: Some(rx),
-            ..Default::default()
-        }))
-        .setup(|_app| Ok(()))
+        // Initialize state with default (None channels)
+        .manage(Mutex::new(ServerState::default()))
+        .setup(|app| {
+            // Get AppHandle
+            let handle = app.handle().clone();
+
+            // Start thread with handle
+            let (tx, rx) = start_analyzer_thread(handle);
+
+            // Update state with channels
+            let state = app.state::<Mutex<ServerState>>();
+            let mut state = state.lock().unwrap();
+            state.analyzer_tx = Some(tx);
+            state.analyzer_rx = Some(rx);
+
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_board,
@@ -630,12 +682,13 @@ pub fn run() {
             fetch_game_history,
             game_into_db,
             fetch_game,
-            do_move,
-            undo_move,
+            fetch_default_game,
             poll_analyzer,
             set_analyzer_fen,
             get_fen,
             stop_analyzer,
+            board_fen,
+            get_board_at_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

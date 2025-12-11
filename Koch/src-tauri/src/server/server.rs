@@ -27,6 +27,16 @@ pub struct PvLineData {
     pub eval_value: i32,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub enum EngineCommand {
+    SetFen(String),
+    GoInfinite,
+    Stop,
+    Quit,
+    Snapshot, // NEW: ask thread to send current PvObject
+}
+
 #[derive(Clone, Debug, serde::Serialize, ts_rs::TS)]
 #[ts(export)]
 pub struct PvObject {
@@ -47,13 +57,6 @@ impl Default for PvObject {
 }
 
 // Commands the UI can send to the Engine
-#[derive(Debug)]
-pub enum EngineCommand {
-    SetFen(String),
-    GoInfinite,
-    Stop,
-    Quit,
-}
 /*
 "rnbqkbnr/ppp1pppp/8/3p4/3PP3/8/PPP2PPP/RNBQKBNR b KQkq - 0 2": {
     "name": "Blackmar-Diemer Gambit",

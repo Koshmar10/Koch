@@ -13,7 +13,7 @@ pub enum EvalType {
     Mate,
 }
 
-#[derive(Clone, TS, Serialize, Deserialize)]
+#[derive(Clone, Debug, TS, Serialize, Deserialize)]
 #[ts(export)]
 pub enum TerminationBy {
     Checkmate,
@@ -41,8 +41,8 @@ pub struct Board {
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
     pub en_passant_target: Option<(u8, u8)>,
-    pub ui: BoardUi,
     pub meta_data: BoardMetaData,
+    pub ui: BoardUi,
     pub move_cache: std::collections::HashMap<u32, PieceMoves>,
     pub been_modified: bool,
     pub next_id: u32,
@@ -79,7 +79,7 @@ pub struct BoardUi {
     pub bar_eval: f32,
 }
 
-#[derive(Clone, TS, Serialize, Deserialize)]
+#[derive(Clone, Debug, TS, Serialize, Deserialize)]
 #[ts(export)]
 pub enum GameResult {
     WhiteWin,
@@ -88,7 +88,7 @@ pub enum GameResult {
     Unfinished,
 }
 
-#[derive(Clone, TS, Serialize, Deserialize)]
+#[derive(Clone, Debug, TS, Serialize, Deserialize)]
 #[ts(export)]
 pub struct BoardMetaData {
     pub starting_position: String,
@@ -267,7 +267,6 @@ impl Board {
 
             // Turn/Fullmove updates
             let was_black = self.turn == PieceColor::Black;
-            self.deselect_piece();
             self.change_turn();
             if was_black {
                 self.fullmove_number = self.fullmove_number.saturating_add(1);
@@ -327,7 +326,7 @@ impl Board {
                 && moving_piece.color == PieceColor::Black
                 && new_pos.0 == 7)
         {
-            self.ui.promtion_pending = Some(new_pos);
+            //self.ui.promtion_pending = Some(new_pos);
         }
 
         // Set en passant target for double pawn advance
@@ -394,7 +393,7 @@ impl Board {
         }
 
         let was_black = self.turn == PieceColor::Black;
-        self.deselect_piece();
+
         self.change_turn();
         if was_black {
             self.fullmove_number = self.fullmove_number.saturating_add(1);
@@ -621,15 +620,5 @@ impl Board {
         if let Some(pawn) = self.squares[pos.0 as usize][pos.1 as usize].as_mut() {
             pawn.kind = kind;
         }
-    }
-    pub fn select_piece(&mut self, piece: ChessPiece) {
-        if self.turn == piece.color {
-            self.ui.selected_piece = Some(piece);
-        } else {
-            self.deselect_piece();
-        }
-    }
-    pub fn deselect_piece(&mut self) {
-        self.ui.selected_piece = None;
     }
 }

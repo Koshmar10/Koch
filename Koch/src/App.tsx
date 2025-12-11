@@ -1,6 +1,5 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+
 import "./App.css";
 import { Sidebar } from "./components/Sidebar";
 import { CenterSection } from "./components/CenterSection";
@@ -10,8 +9,6 @@ export const removeDefaultForButton = "border-0 p-0 m-0 appearance-none focus:ou
 
 function App() {
 
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
   const [centerSection, setCenterSection] = useState<AppScreen>("Home");
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
 

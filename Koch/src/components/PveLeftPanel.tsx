@@ -2,6 +2,8 @@ import { useState } from "react"
 import { removeDefaultForButton } from "../App";
 import { ChessPawn, ChessKnight, ChessBishop, ChessRook, ChessQueen, ChessKing } from "lucide-react";
 import { Board } from "../../src-tauri/bindings/Board";
+import { PieceType } from "../../src-tauri/bindings/PieceType";
+import { PieceColor } from "../../src-tauri/bindings/PieceColor";
 
 type PanelOptions = "moves" | "playerInfo"
 const pieceIconColor = "#FFD6E0"; // Light pink, contrasts well with dark red
@@ -11,7 +13,7 @@ const pieceIconColor = "#FFD6E0"; // Light pink, contrasts well with dark red
 // const blackTaken = [...]
 
 // Map piece kind + color to an icon
-function pieceToIcon(kind: string, color: string) {
+function pieceToIcon(kind: string, _color: string) {
     const commonProps = { color: pieceIconColor, size: 20 };
     switch (kind) {
         case "Pawn":
@@ -32,9 +34,11 @@ function pieceToIcon(kind: string, color: string) {
 }
 
 interface Props {
-    chessBoard: Board | null;
+    blackTaken: [PieceType, PieceColor][];
+    whiteTaken: [PieceType, PieceColor][];
+    moveList: string[];
 }
-export function PveLeftPanel({ chessBoard }: Props) {
+export function PveLeftPanel({ blackTaken, whiteTaken, moveList }: Props) {
     const [selectedPanelOption, setSelectedPanelOption] = useState<PanelOptions>("playerInfo")
 
     const tabClass = (key: PanelOptions) => {
@@ -87,7 +91,7 @@ export function PveLeftPanel({ chessBoard }: Props) {
                                     Taken <span className="text-xs text-secondary/60">( +0.31 )</span>
                                 </h1>
                                 <div className="flex flex-row gap-2">
-                                    {chessBoard?.ui.black_taken.map(([kind, color], idx) => (
+                                    {blackTaken.map(([kind, color], idx) => (
                                         <span key={`black_taken_${idx}`} className="flex items-center">
                                             {pieceToIcon(kind, color)}
                                         </span>
@@ -110,7 +114,7 @@ export function PveLeftPanel({ chessBoard }: Props) {
                                     Taken <span className="text-xs text-secondary/60">( -1.31 )</span>
                                 </h1>
                                 <div className="flex flex-row gap-2">
-                                    {chessBoard?.ui.white_taken.map(([kind, color], idx) => (
+                                    {whiteTaken.map(([kind, color], idx) => (
                                         <span key={`white_taken_${idx}`} className="flex items-center">
                                             {pieceToIcon(kind, color)}
                                         </span>
@@ -122,26 +126,26 @@ export function PveLeftPanel({ chessBoard }: Props) {
                 )}
 
 
-                {selectedPanelOption === "moves" && chessBoard && (
+                {selectedPanelOption === "moves" && moveList.length !== 0 && (
                     <div className="text-secondary/80 text-sm w-[100%] flex flex-row py-4 px-2">
                         <div className="w-[20%] flex flex-col gap-4 pl-2">
                             {Array.from({
                                 length:
-                                    chessBoard.meta_data.move_list.length % 2 === 0
-                                        ? chessBoard.meta_data.move_list.length / 2
-                                        : Math.floor(chessBoard.meta_data.move_list.length / 2) + 1
+                                    moveList.length % 2 === 0
+                                        ? moveList.length / 2
+                                        : Math.floor(moveList.length / 2) + 1
                             }).map((_, idx) => (
                                 <span key={idx}>{idx + 1}.</span>
                             ))}
                         </div>
                         <div className="w-[40%] flex flex-col gap-4 pl-2">
-                            {chessBoard.meta_data.move_list.filter((_, idx) => idx % 2 === 0).map((mv, idx) => (
-                                <div key={idx}>{mv.uci}</div>
+                            {moveList.filter((_, idx) => idx % 2 === 0).map((mv, idx) => (
+                                <div key={idx}>{mv}</div>
                             ))}
                         </div>
                         <div className="w-[40%] flex flex-col gap-4 pl-2">
-                            {chessBoard.meta_data.move_list.filter((_, idx) => idx % 2 === 1).map((mv, idx) => (
-                                <div key={idx}>{mv.uci}</div>
+                            {moveList.filter((_, idx) => idx % 2 === 1).map((mv, idx) => (
+                                <div key={idx}>{mv}</div>
                             ))}
                         </div>
                     </div>

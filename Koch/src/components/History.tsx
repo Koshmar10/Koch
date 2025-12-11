@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react"
 import { BoardMetaData } from "../../src-tauri/bindings/BoardMetaData";
-import { SpaceIcon } from "lucide-react";
+
 
 
 interface HistoryProps {
@@ -14,7 +14,7 @@ export function History({ onOpenGame }: HistoryProps) {
         async function func() {
 
             const games = await invoke<BoardMetaData[]>("fetch_game_history");
-            console.log(games);
+
             setPastGames(games);
         }
         func();
@@ -46,7 +46,7 @@ export function History({ onOpenGame }: HistoryProps) {
                                 <span className="text-sm text-secondary/80 font-light">Black</span>
                             </div>
                             <div className="flex flex-start text-sm text-secondary/60 ">
-                                <h1>Openingn name</h1>
+                                <h1>{pg.opening}</h1>
                             </div>
                             <div className="w-100 h-[1px] bg-white/20" />
                             <div className="flex flex-col gap-1 text-sm">

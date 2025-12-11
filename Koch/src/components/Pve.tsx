@@ -1,11 +1,15 @@
-import { ChevronDown, Divide, Download, Droplet, House, Play, RotateCcw, Sandwich, Upload } from "lucide-react";
-import { ChessBoard } from "./Chessboard";
+import { ChevronDown, Download, Play, RotateCcw, Upload } from "lucide-react";
+import { ChessBoard } from "./chessboard/Chessboard";
 import { PveLeftPanel } from "./PveLeftPanel";
 import { removeDefaultForButton } from "../App";
 import { useEffect, useState } from "react";
 import { Board } from "../../src-tauri/bindings/Board";
 import { GameController } from "../../src-tauri/bindings/GameController";
 import { invoke } from "@tauri-apps/api/core";
+import { SerializedBoard } from "../../src-tauri/bindings/SerializedBoard";
+import { deserialzer, toUciMove } from "../utils";
+import { PieceColor } from "../../src-tauri/bindings/PieceColor";
+import { PieceType } from "../../src-tauri/bindings/PieceType";
 
 export type GameMode = "pvp" | "pve" | "sandbox"
 
@@ -30,6 +34,9 @@ export function Pve() {
     const [gameModeDropdownOpen, setGameModeDropdownOpen] = useState<boolean>(false);
     const [selectedGameMode, setSelectedGameMode] = useState<GameMode>("sandbox");
     const [gameState, setGameState] = useState<GameController | null>(null);
+    const [blackTaken, setBlackTaken] = useState<[PieceType, PieceColor][]>([]);
+    const [whiteTaken, setWhiteTaken] = useState<[PieceType, PieceColor][]>([]);
+    const [moveList, setMoveList] = useState<string[]>([]);
     useEffect(() => {
         (async () => {
             try {
@@ -67,6 +74,23 @@ export function Pve() {
         console.log("Enemy: ", game.enemy);
         setChessBoard(board);
         setGameState(game);
+        setTimeout(async () => {
+            try {
+                const [sb, game] = await invoke<[SerializedBoard, GameController | null]>('update_gameloop');
+                const newBoard = deserialzer(sb);
+
+                setChessBoard(newBoard);
+                if (game) setGameState(game);
+
+                // Sync UI state (taken pieces, move list) from the authoritative backend board
+                setWhiteTaken(newBoard.ui.white_taken);
+                setBlackTaken(newBoard.ui.black_taken);
+                setMoveList(newBoard.meta_data.move_list.map(m => m.uci));
+
+            } catch (e) {
+                console.error("Engine update failed", e);
+            }
+        }, 500);
 
     }
     async function handleNewGame() {
@@ -77,7 +101,74 @@ export function Pve() {
         const res_board = await invoke<Board>('load_fen', { fen: fenstring })
         setChessBoard(res_board);
     }
+    async function handleSandboxBoardMove(from: [number, number], to: [number, number], promotion?: string) {
+        try {
+            let takenPiece = chessBoard?.squares[to[0]][to[1]];
+            const moveResult = await invoke<SerializedBoard | null>('try_move', {
+                srcSquare: from,
+                destSquare: to,
+                promotion: promotion
+            });
 
+            if (moveResult) {
+                if (takenPiece) {
+                    if (takenPiece.color == "Black") {
+                        setWhiteTaken(prev => [...prev, [takenPiece.kind, takenPiece.color]]);
+                    }
+                    if (takenPiece.color == "White") {
+                        setBlackTaken(prev => [...prev, [takenPiece.kind, takenPiece.color]]);
+                    }
+                }
+                setMoveList((prev) => [...prev, toUciMove(from, to, promotion)])
+                setChessBoard(deserialzer(moveResult));
+            } else {
+                console.warn('Move was invalid or no result returned');
+            }
+        } catch (error) {
+            console.error('Failed to perform move:', error);
+        }
+    }
+
+    async function handlePveBoardMove(from: [number, number], to: [number, number]) {
+        try {
+            // 1. Execute Player Move
+            const moveResult = await invoke<SerializedBoard | null>('try_move', {
+                srcSquare: from,
+                destSquare: to,
+            });
+
+            if (moveResult) {
+                // Update UI immediately for player
+                setChessBoard(deserialzer(moveResult));
+
+                // 2. Trigger Engine Move (async)
+                // We use setTimeout to let the React render cycle finish showing the player's move
+                // before the engine potentially blocks or delays the next update.
+                setTimeout(async () => {
+                    try {
+                        const [sb, game] = await invoke<[SerializedBoard, GameController | null]>('update_gameloop');
+                        const newBoard = deserialzer(sb);
+
+                        setChessBoard(newBoard);
+                        if (game) setGameState(game);
+
+                        // Sync UI state (taken pieces, move list) from the authoritative backend board
+                        setWhiteTaken(newBoard.ui.white_taken);
+                        setBlackTaken(newBoard.ui.black_taken);
+                        setMoveList(newBoard.meta_data.move_list.map(m => m.uci));
+
+                    } catch (e) {
+                        console.error("Engine update failed", e);
+                    }
+                }, 500);
+
+            } else {
+                console.warn('Move was invalid or no result returned');
+            }
+        } catch (error) {
+            console.error('Failed to perform move:', error);
+        }
+    }
     return (
         <div className="flex flex-col w-[90%] h-[100%] gap-4">
             {fenPopupOpen && (
@@ -199,11 +290,12 @@ export function Pve() {
                 <div className="flex flex-row w-[100%] h-[100%]">
                     <div className="w-full h-full flex justify-center items-center w-[75%]">
 
-                        <ChessBoard setGameState={setGameState} gameState={gameState} chessBoard={chessBoard} setChessBoard={setChessBoard} />
+                        < ChessBoard board={chessBoard} squareSize={60} onMove={selectedGameMode === "sandbox" ? handleSandboxBoardMove : handlePveBoardMove} flipped={gameState?.player === "Black"} />
+
                     </div>
 
 
-                    <PveLeftPanel chessBoard={chessBoard} />
+                    <PveLeftPanel blackTaken={blackTaken} whiteTaken={whiteTaken} moveList={moveList} />
                 </div>
 
             </div>

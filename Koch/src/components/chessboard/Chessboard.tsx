@@ -1,0 +1,438 @@
+import { useEffect, useMemo, useState } from "react";
+import { Board } from "../../../src-tauri/bindings/Board";
+import { BoardSquare } from "./BoardSquare";
+import { ChessPiece } from "../../../src-tauri/bindings/ChessPiece";
+import { Piece } from "./Piece";
+import { ArrowData, ArrowLayer } from "../ArrowLayer";
+import { PieceMoves } from "../../../src-tauri/bindings/PieceMoves";
+import { PieceColor } from "../../../src-tauri/bindings/PieceColor";
+import { PieceType } from "../../../src-tauri/bindings/PieceType";
+import { getImage } from "./utils";
+
+
+interface ChessBoardProps {
+    squareSize: number;
+    board: Board;
+    onMove?: (from: [number, number], to: [number, number], promotion?: string) => void;
+    lastMove?: [number[], number[]];
+    flipped?: boolean;
+}
+
+interface RenderedPiece {
+    piece: ChessPiece;
+    r: number;
+    c: number;
+    to_render: boolean; // NEW: Controls visibility instead of array removal
+}
+
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
+const PROMOTION_PIECES: PieceType[] = ["Queen", "Rook", "Bishop", "Knight"];
+
+export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = false, }: ChessBoardProps) {
+
+    const [selectedSquare, setSelectedSquare] = useState<number[] | null>(null)
+    const [selectedMoves, setSelectedMoves] = useState<PieceMoves | null>(null)
+    const [arrows, setArrows] = useState<ArrowData[]>([]);
+    const [startArrow, setStartArrow] = useState<number[] | null>(null);
+    const [lastMoveMade, setLastMoveMade] = useState<[number[], number[]] | null>(lastMove || null);
+    // State to handle promotion selection
+    const [promotionMove, setPromotionMove] = useState<{ from: [number, number], to: [number, number], color: PieceColor } | null>(null);
+
+    // 1. Local state for pieces
+    const [optimisticPieces, setOptimisticPieces] = useState<RenderedPiece[]>([]);
+
+    // 2. Sync local state whenever the backend 'board' prop updates
+    useEffect(() => {
+        if (!board) return;
+
+        setOptimisticPieces(prev => {
+            // Create a map of existing pieces for stable updates
+            const nextPiecesMap = new Map<number, RenderedPiece>();
+
+            // Initialize map with previous pieces, defaulting to not rendered (captured)
+            prev.forEach(p => {
+                nextPiecesMap.set(p.piece.id, { ...p, to_render: false });
+            });
+
+            // Process current board state
+            board.squares.forEach((row, rIdx) => {
+                row.forEach((p, cIdx) => {
+                    if (p) {
+                        const existing = nextPiecesMap.get(p.id);
+                        if (existing) {
+                            // Update existing piece: position and visibility
+                            nextPiecesMap.set(p.id, {
+                                ...existing,
+                                piece: p, // Update piece data (e.g. type change)
+                                r: rIdx,
+                                c: cIdx,
+                                to_render: true
+                            });
+                        } else {
+                            // Add new piece (e.g. promotion or initial load)
+                            nextPiecesMap.set(p.id, {
+                                piece: p,
+                                r: rIdx,
+                                c: cIdx,
+                                to_render: true
+                            });
+                        }
+                    }
+                });
+            });
+
+            return Array.from(nextPiecesMap.values());
+        });
+    }, [board]);
+
+    // Highlight squares from parent-provided UCI move
+    useEffect(() => {
+        if (!lastMove) {
+            setLastMoveMade(null);
+            return;
+        }
+        setLastMoveMade(lastMove);
+    }, [lastMove]);
+
+    const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+    };
+
+    const isLegalMove = (r: number, c: number): boolean => {
+        if (!selectedMoves) return false;
+        return false
+            || selectedMoves.capture_moves.some((m) => m[0] === r && m[1] === c)
+            || selectedMoves.quiet_moves.some((m) => m[0] === r && m[1] === c)
+    }
+
+    const selectSquare = (r: number, c: number) => {
+        const piece = board.squares[r][c];
+        if (!piece) return;
+        setSelectedSquare([r, c]);
+        setSelectedMoves(board.move_cache[piece.id] || null);
+    }
+    const deselectSquare = () => {
+        setSelectedSquare(null);
+        setSelectedMoves(null);
+    }
+
+    const handlePromotionSelect = (pieceType: PieceType) => {
+        if (!promotionMove) return;
+        const { from, to } = promotionMove;
+
+        // Optimistic update with the promoted piece
+        setOptimisticPieces(prev => {
+            return prev.map(p => {
+                // Hide captured piece at destination
+                if (p.r === to[0] && p.c === to[1] && p.to_render) {
+                    return { ...p, to_render: false };
+                }
+                // Move and promote the pawn
+                if (p.r === from[0] && p.c === from[1] && p.to_render) {
+                    return {
+                        ...p,
+                        r: to[0],
+                        c: to[1],
+                        piece: { ...p.piece, kind: pieceType }
+                    };
+                }
+                return p;
+            });
+        });
+
+        deselectSquare();
+        setPromotionMove(null);
+
+        if (onMove) {
+            onMove(from, to, pieceType);
+        }
+    };
+
+    const onSquareMouseDown = (r: number, c: number, e: React.MouseEvent) => {
+        if (e.button === 0) {
+            setArrows([]);
+
+            // 3. Handle Move Logic
+            if (selectedSquare) {
+                const [fromR, fromC] = selectedSquare;
+
+                // If clicking the same square, deselect
+                if (fromR === r && fromC === c) {
+                    deselectSquare()
+                    return;
+                }
+
+                if (isLegalMove(r, c)) {
+                    // --- PROMOTION CHECK START ---
+                    const movingPiece = board.squares[fromR][fromC];
+                    if (movingPiece && movingPiece.kind === "Pawn") {
+                        const isWhitePromotion = movingPiece.color === "White" && r === 0;
+                        const isBlackPromotion = movingPiece.color === "Black" && r === 7;
+
+                        if (isWhitePromotion || isBlackPromotion) {
+                            setPromotionMove({
+                                from: [fromR, fromC],
+                                to: [r, c],
+                                color: movingPiece.color
+                            });
+                            return; // Stop here, wait for user selection
+                        }
+                    }
+                    // --- PROMOTION CHECK END ---
+
+                    // --- OPTIMISTIC UPDATE START ---
+                    setOptimisticPieces(prev => {
+                        return prev.map(p => {
+                            // A. Capture: Hide piece at destination
+                            if (p.r === r && p.c === c && p.to_render) {
+                                return { ...p, to_render: false };
+                            }
+                            // B. Move: Update coordinates of selected piece
+                            if (p.r === fromR && p.c === fromC && p.to_render) {
+                                return { ...p, r: r, c: c };
+                            }
+                            return p;
+                        });
+                    });
+                    // --- OPTIMISTIC UPDATE END ---
+
+                    // Clear selection
+                    deselectSquare()
+                    setLastMoveMade([[fromR, fromC], [r, c]]);
+                    if (onMove) {
+                        onMove([fromR, fromC], [r, c]);
+                    }
+
+
+                    return;
+                }
+            }
+
+            // Normal selection logic (if not moving)
+            const piece = board.squares[r][c];
+            const piece_color = piece?.color;
+
+            // Do not select empty squares
+            if (!piece) {
+                deselectSquare();
+                return;
+            }
+
+            // Ignore clicks on opponent's pieces
+            if (piece_color !== board.turn) {
+                return;
+            }
+
+            selectSquare(r, c)
+        }
+        if (e.button === 2) {
+            setStartArrow([r, c]);
+        }
+    };
+
+    const onSquareMouseUp = (r: number, c: number, e: React.MouseEvent) => {
+        if (e.button === 2) {
+            if (startArrow) {
+                if (startArrow[0] !== r || startArrow[1] !== c) {
+                    setArrows(prev => [
+                        ...prev,
+                        { from: `${startArrow[0]}-${startArrow[1]}`, to: `${r}-${c}`, color: "orange", type: "user" },
+                    ]);
+                } else {
+                    setArrows([]);
+                }
+            }
+            setStartArrow(null);
+        }
+    };
+
+    const labelSize = 16; // Width/height for label area
+
+    // Helper to get visual coordinates based on flip state
+    const getVisualCoords = (r: number, c: number) => {
+        return flipped ? [7 - r, 7 - c] : [r, c];
+    };
+
+    // Helper to get logical coordinates from visual index
+    const getLogicalCoords = (visualRow: number, visualCol: number) => {
+        return flipped ? [7 - visualRow, 7 - visualCol] : [visualRow, visualCol];
+    };
+
+    const isInCheck = (r: number, c: number, color?: PieceColor): boolean => {
+        let in_check = false;
+        let piece = board.squares[r][c];
+        if (piece === null) return in_check;
+        if (piece.kind !== "King") return in_check;
+        if (piece.color !== color) return in_check;
+        // Build a map of piece ID -> color for quick lookup
+        const idToColor = new Map<number, PieceColor>();
+        for (let rr = 0; rr < 8; rr++) {
+            for (let cc = 0; cc < 8; cc++) {
+                const p = board.squares[rr][cc];
+                if (p) idToColor.set(p.id, p.color);
+            }
+        }
+
+        // Check if any opponent piece has a capture move to [r, c]
+        for (const [idStr, moves] of Object.entries(board.move_cache)) {
+            const id = Number(idStr);
+            const attackerColor = idToColor.get(id);
+            if (!attackerColor || attackerColor === color) continue;
+            if (moves) {
+
+                if (moves.capture_moves.some(([mr, mc]) => mr === r && mc === c)) {
+                    in_check = true;
+                    break;
+                }
+            }
+        }
+        return in_check;
+
+    }
+    return (
+        <div className="relative inline-block" onContextMenu={handleContextMenu}>
+            {/* Rank labels (1-8) on the left */}
+            <div
+                className="absolute top-0 flex flex-col justify-around items-center pointer-events-none select-none"
+                style={{
+                    left: -labelSize - 4,
+                    height: squareSize * 8,
+                    width: labelSize,
+                }}
+            >
+                {(flipped ? [...RANKS].reverse() : RANKS).map((rank, idx) => (
+                    <span
+                        key={`rank-${rank}`}
+                        className="text-xs font-semibold text-secondary/80"
+                        style={{
+                            height: squareSize,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        {rank}
+                    </span>
+                ))}
+            </div>
+
+            {/* File labels (a-h) on the bottom */}
+            <div
+                className="absolute left-0 flex flex-row justify-around items-center pointer-events-none select-none"
+                style={{
+                    top: squareSize * 8 + 4,
+                    width: squareSize * 8,
+                    height: labelSize,
+                }}
+            >
+                {(flipped ? [...FILES].reverse() : FILES).map((file) => (
+                    <span
+                        key={`file-${file}`}
+                        className="text-xs font-semibold text-secondary/80"
+                        style={{
+                            width: squareSize,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        {file}
+                    </span>
+                ))}
+            </div>
+
+            {/* Board squares */}
+            <div
+                className="grid relative z-0"
+                style={{
+                    gridTemplateColumns: `repeat(8, ${squareSize}px)`,
+                    gridTemplateRows: `repeat(8, ${squareSize}px)`,
+                    width: squareSize * 8,
+                    height: squareSize * 8,
+                }}
+            >
+                {Array.from({ length: 64 }, (_, i) => {
+                    const visualRow = Math.floor(i / 8);
+                    const visualCol = i % 8;
+                    const [row, col] = getLogicalCoords(visualRow, visualCol);
+                    const isDark = (visualRow + visualCol) % 2 === 1;
+
+                    const isSelected =
+                        (!!selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col) ||
+                        (!!lastMoveMade &&
+                            ((lastMoveMade[0][0] === row && lastMoveMade[0][1] === col) ||
+                                (lastMoveMade[1][0] === row && lastMoveMade[1][1] === col)));
+
+                    return (
+                        <BoardSquare
+                            key={`${row}-${col}`}
+                            dark={isDark}
+                            selected={isSelected}
+                            size={squareSize}
+                            attackMove={false}
+                            inCheck={isInCheck(row, col, board.squares[row][col]?.color)}
+                            captureMove={!!selectedMoves && selectedMoves.capture_moves.some((m) => m[0] === row && m[1] === col)}
+                            quietMove={!!selectedMoves && selectedMoves.quiet_moves.some((m) => m[0] === row && m[1] === col)}
+                            handleMouseDown={(e) => onSquareMouseDown(row, col, e)}
+                            handleMouseUp={(e) => onSquareMouseUp(row, col, e)}
+                        />
+                    );
+                })}
+            </div>
+
+            {/* Pieces layer on top - Renders from optimisticPieces */}
+            <div
+                className="absolute top-0 left-0 z-10 pointer-events-none"
+                style={{
+                    width: squareSize * 8,
+                    height: squareSize * 8,
+                }}
+            >
+                {optimisticPieces.map(({ piece, r, c, to_render }) => {
+                    if (!to_render) return null; // Skip rendering if marked false
+
+                    const [visualR, visualC] = getVisualCoords(r, c);
+                    return (
+                        <Piece
+                            key={piece.id} // Important: ID must be stable for animation to work
+                            size={squareSize}
+                            row={visualR}
+                            col={visualC}
+                            kind={piece.kind}
+                            color={piece.color}
+                        />
+                    );
+                })}
+            </div>
+            <ArrowLayer
+                arrows={arrows}
+                isFlipped={flipped}
+                squareSize={squareSize}
+            />
+
+            {/* Promotion Modal */}
+            {promotionMove && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-sm backdrop-blur-[1px]">
+                    <div className="bg-zinc-900/90 p-3 rounded-lg shadow-2xl border border-zinc-700 flex gap-3 animate-in fade-in zoom-in duration-200">
+                        {PROMOTION_PIECES.map(kind => (
+                            <button
+                                key={kind}
+                                className="p-2 hover:bg-zinc-700/50 rounded-md flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95"
+                                onClick={() => handlePromotionSelect(kind)}
+                                title={`Promote to ${kind}`}
+                            >
+                                <img
+                                    src={getImage(promotionMove.color, kind)}
+                                    alt={kind}
+                                    className="w-8 h-8 object-cover"
+                                />
+                                <span className="text-xs font-semibold text-white">{kind}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}

@@ -1,8 +1,7 @@
 import { AppScreen } from "../App";
-import { ChessBoard } from "./Chessboard";
 import { Home } from "./Home";
 import { Pve } from "./Pve";
-import { Analyzer } from "./Analyzer";
+import { Analyzer } from "./analyzer/Analyzer";
 import { History } from "./History";
 
 interface CenterSectionProps {

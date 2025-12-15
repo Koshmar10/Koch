@@ -15,8 +15,11 @@ interface AnalyzerInputsProps {
     onLast: () => void;
     // Engine Data Props (Pass-through)
     engineRunning: boolean;
+    engineLoading: boolean;
+    setEngineLoading: Dispatch<SetStateAction<boolean>>;
     setEngineRunning: Dispatch<SetStateAction<boolean>>;
     pvObject: PvObject | null;
+
     startEngine: () => void;
 }
 
@@ -29,6 +32,7 @@ export function AnalyzerInputs({
     onFirst,
     onLast,
     engineRunning,
+    engineLoading,
     setEngineRunning,
     pvObject,
     startEngine
@@ -110,6 +114,7 @@ export function AnalyzerInputs({
             <EngineData
                 engineRunning={engineRunning}
                 setEngineRunning={setEngineRunning}
+                engineLoading={engineLoading}
                 pvObject={pvObject}
                 startEngine={startEngine}
             />

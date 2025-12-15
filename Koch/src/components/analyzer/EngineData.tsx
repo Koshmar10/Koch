@@ -7,11 +7,12 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react"; // Import
 interface EngineDataProps {
     engineRunning: boolean;
     setEngineRunning: Dispatch<SetStateAction<boolean>>
+    engineLoading: boolean
     pvObject: PvObject | null; // Initial/Parent state
     startEngine: () => void;
 }
 
-export function EngineData({ pvObject, engineRunning, setEngineRunning, startEngine }: EngineDataProps) {
+export function EngineData({ pvObject, engineRunning, setEngineRunning, startEngine, engineLoading }: EngineDataProps) {
     // Local state to ho    ld the live up
     const [localPv, setLocalPv] = useState<PvObject | null>(pvObject);
 
@@ -19,15 +20,7 @@ export function EngineData({ pvObject, engineRunning, setEngineRunning, startEng
         setLocalPv(pvObject);
     }, [pvObject]);
 
-    useEffect(() => {
-        const unlistenPromise = listen<PvObject>("pv_update", (event) => {
-            setLocalPv(event.payload);
-        });
 
-        return () => {
-            unlistenPromise.then((unlisten) => unlisten()).catch(() => { });
-        };
-    }, []);
     return (
         <div className="analyzer-out flex flex-col gap-2 w-[100%]">
             <div className="flex w-full items-center justify-between">
@@ -67,7 +60,7 @@ export function EngineData({ pvObject, engineRunning, setEngineRunning, startEng
             <div className="flex flex-col text-xs gap-3 w-[100%]">
                 {
 
-                    !localPv || localPv.depth === 0 ? (
+                    !localPv || localPv.depth === 0 || engineLoading ? (
                         <div className="flex items-center gap-2 text-secondary/80">
                             <LoaderCircle className="w-4 h-4 animate-spin" />
                             <span>loading engine lines</span>

@@ -1,11 +1,15 @@
+use crate::analyzer::analyzer::EngineCommand;
 use crate::analyzer::board_interactions::AnalyzerController;
 use crate::{database, engine::Board, game::controller::GameController};
 
 use serde::{Deserialize, Serialize};
+use sysinfo::System;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
+use std::error::Error;
+use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -25,16 +29,6 @@ pub struct PvLineData {
     pub moves: String,
     pub eval_kind: EvalKind,
     pub eval_value: i32,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, ts_rs::TS)]
-#[ts(export)]
-pub enum EngineCommand {
-    SetFen(String),
-    GoInfinite,
-    Stop,
-    Quit,
-    Snapshot, // NEW: ask thread to send current PvObject
 }
 
 #[derive(Clone, Debug, serde::Serialize, ts_rs::TS)]
@@ -70,6 +64,30 @@ impl Default for PvObject {
             "chronos": "Blackmar gambit"
         }
     }, */
+#[derive(Debug)]
+pub struct Settings {
+    pub corrupted: bool,
+    pub map: HashMap<String, String>,
+}
+impl Settings {
+    pub fn update(&mut self, key: String, val: String) {
+        let sv = self.map.entry(key).or_insert("".to_string());
+        *sv = val;
+    }
+    pub fn save(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut settings_string = String::new();
+        // FIX: Iterate by reference (&self.map) instead of draining (moving) the values
+        for (key, value) in &self.map {
+            let line = format!("{}={}\n", key, value);
+            settings_string.push_str(&line);
+        }
+        settings_string = settings_string.trim().to_string();
+
+        // FIX: Write to ../koch.config to avoid triggering the src-tauri file watcher
+        fs::write("../koch.config", settings_string)?;
+        Ok(())
+    }
+}
 #[derive(Deserialize)]
 pub struct OpeningEntry<'a> {
     pub name: Cow<'a, str>,
@@ -84,6 +102,9 @@ pub struct ServerState<'a> {
     pub analyzer_controller: AnalyzerController,
     pub analyzer_tx: Option<Sender<EngineCommand>>,
     pub analyzer_rx: Option<Receiver<PvObject>>,
+    pub total_memory: f64,
+    pub nbcpu: usize,
+    pub settings: Settings,
 }
 impl<'a> Default for ServerState<'a> {
     fn default() -> Self {
@@ -139,6 +160,44 @@ impl<'a> Default for ServerState<'a> {
             analyzer_rx: None,
             analyzer_tx: None,
             opening_index: opening_index,
+            total_memory: 0.0,
+            nbcpu: 1,
+            settings: load_settings().unwrap_or_else(|_| Settings {
+                corrupted: true,
+                map: HashMap::new(),
+            }),
         };
     }
+}
+#[tauri::command]
+pub fn get_system_information(state: tauri::State<'_, Mutex<ServerState>>) -> (f64, usize) {
+    let state = state.lock().unwrap();
+    println!("RAM capacity: {} GB", &state.total_memory);
+    println!("Number of CPUs: {}", &state.nbcpu);
+    (state.total_memory, state.nbcpu)
+}
+
+pub fn load_settings() -> Result<Settings, io::Error> {
+    let mut settings_map = HashMap::new();
+    let mut corrupted = false;
+
+    // FIX: Read from ../koch.config
+    let settings = fs::File::open("../koch.config")?;
+    let reader = BufReader::new(settings);
+    for line in reader.lines() {
+        match line {
+            Ok(line) => {
+                let split_line: Vec<&str> = line.split("=").collect();
+                settings_map.insert(split_line[0].to_string(), split_line[1].to_string());
+            }
+            Err(_) => {
+                corrupted = true;
+            }
+        }
+    }
+
+    Ok(Settings {
+        corrupted: corrupted,
+        map: settings_map,
+    })
 }

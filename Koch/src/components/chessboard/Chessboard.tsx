@@ -8,14 +8,17 @@ import { PieceMoves } from "../../../src-tauri/bindings/PieceMoves";
 import { PieceColor } from "../../../src-tauri/bindings/PieceColor";
 import { PieceType } from "../../../src-tauri/bindings/PieceType";
 import { getImage } from "./utils";
+import { PlayerClock } from "./PlayerClock";
+import { PlayerCard } from "./PlayerCard";
 
 
 interface ChessBoardProps {
     squareSize: number;
     board: Board;
     onMove?: (from: [number, number], to: [number, number], promotion?: string) => void;
-    lastMove?: [number[], number[]];
+    lastMove?: [number[], number[]] | null;
     flipped?: boolean;
+    isInteractive?: boolean;
 }
 
 interface RenderedPiece {
@@ -29,7 +32,9 @@ const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
 const PROMOTION_PIECES: PieceType[] = ["Queen", "Rook", "Bishop", "Knight"];
 
-export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = false, }: ChessBoardProps) {
+const DEFAULT_TIME = 1000 * 60 * 10; // 10 minutes
+
+export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = false, isInteractive = false, }: ChessBoardProps) {
 
     const [selectedSquare, setSelectedSquare] = useState<number[] | null>(null)
     const [selectedMoves, setSelectedMoves] = useState<PieceMoves | null>(null)
@@ -45,7 +50,8 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
     // 2. Sync local state whenever the backend 'board' prop updates
     useEffect(() => {
         if (!board) return;
-
+        setSelectedMoves(null);
+        setSelectedSquare(null);
         setOptimisticPieces(prev => {
             // Create a map of existing pieces for stable updates
             const nextPiecesMap = new Map<number, RenderedPiece>();
@@ -107,6 +113,7 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
     }
 
     const selectSquare = (r: number, c: number) => {
+        if (!isInteractive) return;
         const piece = board.squares[r][c];
         if (!piece) return;
         setSelectedSquare([r, c]);
@@ -247,8 +254,6 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
         }
     };
 
-    const labelSize = 16; // Width/height for label area
-
     // Helper to get visual coordinates based on flip state
     const getVisualCoords = (r: number, c: number) => {
         return flipped ? [7 - r, 7 - c] : [r, c];
@@ -291,148 +296,136 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
 
     }
     return (
-        <div className="relative inline-block" onContextMenu={handleContextMenu}>
-            {/* Rank labels (1-8) on the left */}
-            <div
-                className="absolute top-0 flex flex-col justify-around items-center pointer-events-none select-none"
-                style={{
-                    left: -labelSize - 4,
-                    height: squareSize * 8,
-                    width: labelSize,
-                }}
-            >
-                {(flipped ? [...RANKS].reverse() : RANKS).map((rank, idx) => (
-                    <span
-                        key={`rank-${rank}`}
-                        className="text-xs font-semibold text-secondary/80"
-                        style={{
-                            height: squareSize,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        }}
-                    >
-                        {rank}
-                    </span>
-                ))}
-            </div>
+        <div className="flex flex-col gap-2">
 
-            {/* File labels (a-h) on the bottom */}
-            <div
-                className="absolute left-0 flex flex-row justify-around items-center pointer-events-none select-none"
-                style={{
-                    top: squareSize * 8 + 4,
-                    width: squareSize * 8,
-                    height: labelSize,
-                }}
-            >
-                {(flipped ? [...FILES].reverse() : FILES).map((file) => (
-                    <span
-                        key={`file-${file}`}
-                        className="text-xs font-semibold text-secondary/80"
-                        style={{
-                            width: squareSize,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        }}
-                    >
-                        {file}
-                    </span>
-                ))}
-            </div>
+            {/* Top Player Card (Opponent) */}
+            <PlayerCard display={true} color={flipped ? "White" : "Black"} player={flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name} />
 
-            {/* Board squares */}
-            <div
-                className="grid relative z-0"
-                style={{
-                    gridTemplateColumns: `repeat(8, ${squareSize}px)`,
-                    gridTemplateRows: `repeat(8, ${squareSize}px)`,
-                    width: squareSize * 8,
-                    height: squareSize * 8,
-                }}
-            >
-                {Array.from({ length: 64 }, (_, i) => {
-                    const visualRow = Math.floor(i / 8);
-                    const visualCol = i % 8;
-                    const [row, col] = getLogicalCoords(visualRow, visualCol);
-                    const isDark = (visualRow + visualCol) % 2 === 1;
+            <div className="relative inline-block" onContextMenu={handleContextMenu}>
 
-                    const isSelected =
-                        (!!selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col) ||
-                        (!!lastMoveMade &&
-                            ((lastMoveMade[0][0] === row && lastMoveMade[0][1] === col) ||
-                                (lastMoveMade[1][0] === row && lastMoveMade[1][1] === col)));
+                {/* Board squares */}
+                <div
+                    className="grid relative z-0"
+                    style={{
+                        gridTemplateColumns: `repeat(8, ${squareSize}px)`,
+                        gridTemplateRows: `repeat(8, ${squareSize}px)`,
+                        width: squareSize * 8,
+                        height: squareSize * 8,
+                    }}
+                >
+                    {Array.from({ length: 64 }, (_, i) => {
+                        const visualRow = Math.floor(i / 8);
+                        const visualCol = i % 8;
+                        const [row, col] = getLogicalCoords(visualRow, visualCol);
+                        const isDark = (visualRow + visualCol) % 2 === 1;
 
-                    return (
-                        <BoardSquare
-                            key={`${row}-${col}`}
-                            dark={isDark}
-                            selected={isSelected}
-                            size={squareSize}
-                            attackMove={false}
-                            inCheck={isInCheck(row, col, board.squares[row][col]?.color)}
-                            captureMove={!!selectedMoves && selectedMoves.capture_moves.some((m) => m[0] === row && m[1] === col)}
-                            quietMove={!!selectedMoves && selectedMoves.quiet_moves.some((m) => m[0] === row && m[1] === col)}
-                            handleMouseDown={(e) => onSquareMouseDown(row, col, e)}
-                            handleMouseUp={(e) => onSquareMouseUp(row, col, e)}
-                        />
-                    );
-                })}
-            </div>
+                        const isSelected =
+                            (!!selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col) ||
+                            (!!lastMoveMade &&
+                                ((lastMoveMade[0][0] === row && lastMoveMade[0][1] === col) ||
+                                    (lastMoveMade[1][0] === row && lastMoveMade[1][1] === col)));
 
-            {/* Pieces layer on top - Renders from optimisticPieces */}
-            <div
-                className="absolute top-0 left-0 z-10 pointer-events-none"
-                style={{
-                    width: squareSize * 8,
-                    height: squareSize * 8,
-                }}
-            >
-                {optimisticPieces.map(({ piece, r, c, to_render }) => {
-                    if (!to_render) return null; // Skip rendering if marked false
+                        // Annotation Logic
+                        const isLeftEdge = visualCol === 0;
+                        const isBottomEdge = visualRow === 7;
+                        const rankLabel = isLeftEdge ? (flipped ? visualRow + 1 : 8 - visualRow) : null;
+                        const fileLabel = isBottomEdge ? (flipped ? FILES[7 - visualCol] : FILES[visualCol]) : null;
 
-                    const [visualR, visualC] = getVisualCoords(r, c);
-                    return (
-                        <Piece
-                            key={piece.id} // Important: ID must be stable for animation to work
-                            size={squareSize}
-                            row={visualR}
-                            col={visualC}
-                            kind={piece.kind}
-                            color={piece.color}
-                        />
-                    );
-                })}
-            </div>
-            <ArrowLayer
-                arrows={arrows}
-                isFlipped={flipped}
-                squareSize={squareSize}
-            />
+                        return (
+                            <div
 
-            {/* Promotion Modal */}
-            {promotionMove && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-sm backdrop-blur-[1px]">
-                    <div className="bg-zinc-900/90 p-3 rounded-lg shadow-2xl border border-zinc-700 flex gap-3 animate-in fade-in zoom-in duration-200">
-                        {PROMOTION_PIECES.map(kind => (
-                            <button
-                                key={kind}
-                                className="p-2 hover:bg-zinc-700/50 rounded-md flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95"
-                                onClick={() => handlePromotionSelect(kind)}
-                                title={`Promote to ${kind}`}
+                                className="relative p-0 m-0"
+                                style={{ width: squareSize, height: squareSize }}
                             >
-                                <img
-                                    src={getImage(promotionMove.color, kind)}
-                                    alt={kind}
-                                    className="w-8 h-8 object-cover"
+                                <BoardSquare
+                                    // key is now on the wrapper div
+                                    key={`${row}-${col}`}
+                                    dark={isDark}
+                                    selected={isSelected}
+                                    size={squareSize}
+                                    attackMove={false}
+                                    inCheck={isInCheck(row, col, board.squares[row][col]?.color)}
+                                    captureMove={!!selectedMoves && selectedMoves.capture_moves.some((m) => m[0] === row && m[1] === col)}
+                                    quietMove={!!selectedMoves && selectedMoves.quiet_moves.some((m) => m[0] === row && m[1] === col)}
+                                    handleMouseDown={(e) => onSquareMouseDown(row, col, e)}
+                                    handleMouseUp={(e) => onSquareMouseUp(row, col, e)}
                                 />
-                                <span className="text-xs font-semibold text-white">{kind}</span>
-                            </button>
-                        ))}
-                    </div>
+
+                                {/* Rank Annotation (Top-Left) */}
+                                {rankLabel && (
+                                    <span className={`absolute top-0.5 left-1 text-[10px] font-bold select-none pointer-events-none ${isDark ? "text-white/60" : "text-black/60"}`}>
+                                        {rankLabel}
+                                    </span>
+                                )}
+
+                                {/* File Annotation (Bottom-Right) */}
+                                {fileLabel && (
+                                    <span className={`absolute bottom-0 right-1 text-[10px] font-bold select-none pointer-events-none ${isDark ? "text-white/60" : "text-black/60"}`}>
+                                        {fileLabel}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
-            )}
-        </div>
+
+                {/* Pieces layer on top */}
+                <div
+                    className="absolute top-0 left-0 z-10 pointer-events-none"
+                    style={{
+                        width: squareSize * 8,
+                        height: squareSize * 8,
+                    }}
+                >
+                    {optimisticPieces.map(({ piece, r, c, to_render }) => {
+                        if (!to_render) return null;
+
+                        const [visualR, visualC] = getVisualCoords(r, c);
+                        return (
+                            <Piece
+                                key={piece.id}
+                                size={squareSize}
+                                row={visualR}
+                                col={visualC}
+                                kind={piece.kind}
+                                color={piece.color}
+                            />
+                        );
+                    })}
+                </div>
+                <ArrowLayer
+                    arrows={arrows}
+                    isFlipped={flipped}
+                    squareSize={squareSize}
+                />
+
+                {/* Promotion Modal */}
+                {promotionMove && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-sm backdrop-blur-[1px]">
+                        <div className="bg-zinc-900/90 p-3 rounded-lg shadow-2xl border border-zinc-700 flex gap-3 animate-in fade-in zoom-in duration-200">
+                            {PROMOTION_PIECES.map(kind => (
+                                <button
+                                    key={kind}
+                                    className="p-2 hover:bg-zinc-700/50 rounded-md flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95"
+                                    onClick={() => handlePromotionSelect(kind)}
+                                    title={`Promote to ${kind}`}
+                                >
+                                    <img
+                                        src={getImage(promotionMove.color, kind)}
+                                        alt={kind}
+                                        className="w-8 h-8 object-cover"
+                                    />
+                                    <span className="text-xs font-semibold text-white">{kind}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Bottom Player Card (Self) */}
+            <PlayerCard display={true} color={!flipped ? "White" : "Black"} player={!flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name} />
+
+        </div >
     )
 }

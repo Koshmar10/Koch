@@ -12,6 +12,7 @@ import black_queen from "../../assets/pieces/black_queen.png";
 import black_king from "../../assets/pieces/black_king.png";
 import { PieceColor } from "../../../src-tauri/bindings/PieceColor";
 import { PieceType } from "../../../src-tauri/bindings/PieceType";
+import { ChessPiece } from "../../../src-tauri/bindings/ChessPiece";
 
 export const PIECE_IMAGES: Record<PieceColor, Record<PieceType, string>> = {
     White: {
@@ -43,4 +44,9 @@ export function squareFromCoords(absX: number, absY: number, squareSize: number)
     const col = Math.floor(relativeX / squareSize);
     const row = Math.floor(relativeY / squareSize);
     return [row, col];
+}
+export function squaresAreSame(sq1: ChessPiece | null, sq2: ChessPiece | null): boolean {
+    if (sq1 === null && sq2 === null) return true;
+    if (sq1?.kind === sq2?.kind && sq1?.color === sq2?.color) return true;
+    return false;
 }

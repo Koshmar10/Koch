@@ -15,7 +15,7 @@ export function Sidebar({ handleClick, selectedScreen }: SideBarProps) {
     };
 
     return (
-        <div className="flex flex-col w-[10%] border-r-[1px] border-white/20 gap-6">
+        <div className="flex flex-col w-[5%] border-r-[1px] border-white/20 gap-6">
             <div className="flex justify-center items-center pt-8 border-b-[1px] border-white/20 pb-6">
                 <span className="w-fit h-fit px-5 py-3 rounded-lg text-secondary bg-accent text-xl">K</span>
             </div>

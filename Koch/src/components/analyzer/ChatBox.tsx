@@ -7,7 +7,7 @@ interface Props {
 export function ChatBox({ toggleChat }: Props) {
     return (
         <div
-            className={`chat-box flex flex-col bg-primary/20 border-l border-accent/80 transition-all duration-300 ease-in-out ${toggleChat ? 'w-0' : 'w-[30%]'
+            className={`chat-box flex flex-col bg-primary/20 border-l border-accent/80 transition-all duration-300 ease-in-out ${toggleChat ? 'w-0' : 'w-[45%]'
                 }`}
         >
             {/* HEADER */}

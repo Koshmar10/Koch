@@ -104,6 +104,7 @@ pub fn get_board_at_index(
     }
 
     starting_board.meta_data = state.analyzer_controller.board.meta_data.clone();
+    starting_board.rerender_move_cache();
     let anal = AnalyzerController {
         game_id: state.analyzer_controller.game_id,
         board: starting_board,

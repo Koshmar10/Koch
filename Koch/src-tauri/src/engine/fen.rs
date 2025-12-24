@@ -236,7 +236,7 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError> {
             Some((row as u8, file as u8))
         }
     };
-    Ok(Board {
+    let mut result_board = Board {
         squares: board,
         turn: if to_move == "w" {
             PieceColor::White
@@ -272,7 +272,10 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError> {
         been_modified: true,
         next_id,
         ply_count: 0,
-    })
+        game_phase: super::board::GamePhase::Opening,
+    };
+    result_board.update_gamephase();
+    Ok(result_board)
 }
 
 impl ToString for Board {
@@ -339,4 +342,36 @@ impl ToString for Board {
             + " "
             + &self.fullmove_number.to_string();
     }
+}
+pub fn translate_fen_for_model(fen: &str) -> String {
+    let board_layout = {
+        let fen_parts = fen.split(' ').collect::<Vec<&str>>();
+        let board = fen_parts[0];
+        board
+    };
+    let board_rows = {
+        let board_layout = board_layout.split('/').collect::<Vec<&str>>();
+        let mut board_rows = Vec::new();
+        let mut i = 1;
+        for row in board_layout {
+            let mut board_row = vec![format!("{}", 9 - i)];
+            for ch in row.chars() {
+                if ch.is_digit(10) {
+                    board_row.extend(make_empty_cols(ch.to_digit(10).unwrap() as usize));
+                } else {
+                    board_row.push(format!("{}", ch));
+                }
+            }
+            board_rows.push(board_row.join(" "));
+            i += 1;
+        }
+        board_rows.push("  a b c d e f g h ".into());
+        board_rows.join("\n")
+    };
+    println!("{}", board_rows);
+    board_rows
+}
+pub fn make_empty_cols(count: usize) -> Vec<String> {
+    let white_spaces = vec![".".to_string(); count];
+    white_spaces
 }

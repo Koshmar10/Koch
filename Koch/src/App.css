@@ -69,6 +69,24 @@ h1 {
   margin-right: 5px;
 }
 
+@layer utilities {
+  @keyframes message-fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-message {
+    animation: message-fade-in 0.3s ease-out forwards;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;

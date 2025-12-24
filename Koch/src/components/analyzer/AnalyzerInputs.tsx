@@ -21,6 +21,15 @@ interface AnalyzerInputsProps {
     pvObject: PvObject | null;
 
     startEngine: () => void;
+
+    // NEW: active toggles moved to parent
+    threatsActive: boolean;
+    setThreatsActive: Dispatch<SetStateAction<boolean>>;
+    suggestionsActive: boolean;
+    setSuggestionsActive: Dispatch<SetStateAction<boolean>>;
+    attacksActive: boolean;
+    setAttacksActive: Dispatch<SetStateAction<boolean>>;
+    isFetching: boolean;
 }
 
 export function AnalyzerInputs({
@@ -35,12 +44,15 @@ export function AnalyzerInputs({
     engineLoading,
     setEngineRunning,
     pvObject,
-    startEngine
+    startEngine,
+    threatsActive,
+    setThreatsActive,
+    suggestionsActive,
+    setSuggestionsActive,
+    attacksActive,
+    setAttacksActive,
+    isFetching,
 }: AnalyzerInputsProps) {
-
-    const [threatsActive, setThreatsActive] = useState<boolean>(false);
-    const [suggestionsActive, setSuggestionActive] = useState<boolean>(false);
-    const [attacksActive, setAttacksActive] = useState<boolean>(false);
 
     return (
         <div className="analyzer-inputs flex flex-col justify-start items-start gap-4 mx-4 w-full max-w-[160px]"
@@ -52,7 +64,7 @@ export function AnalyzerInputs({
                     {/* First */}
                     <button
                         className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
-                        disabled={currentMove === -1}
+                        disabled={currentMove === -1 || isFetching}
                         onClick={(e) => { e.preventDefault(); onFirst(); }}
                     >
                         <ChevronFirst className="text-secondary/50 w-4 h-4" />
@@ -61,7 +73,7 @@ export function AnalyzerInputs({
                     {/* Prev */}
                     <button
                         className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
-                        disabled={currentMove === -1}
+                        disabled={currentMove === -1 || isFetching}
                         onClick={(e) => { e.preventDefault(); onPrev(-1); }}
                     >
                         <ChevronLeft className="text-secondary/90 w-4 h-4" />
@@ -70,7 +82,7 @@ export function AnalyzerInputs({
                     {/* Next */}
                     <button
                         className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
-                        disabled={currentMove >= totalMoves}
+                        disabled={currentMove >= totalMoves || isFetching}
                         onClick={(e) => { e.preventDefault(); onNext(1); }}
                     >
                         <ChevronRight className="text-secondary/90 w-4 h-4" />
@@ -79,7 +91,7 @@ export function AnalyzerInputs({
                     {/* Last */}
                     <button
                         className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm disabled:opacity-50"
-                        disabled={currentMove >= totalMoves}
+                        disabled={currentMove >= totalMoves || isFetching}
                         onClick={(e) => { e.preventDefault(); onLast(); }}
                     >
                         <ChevronLast className="text-secondary/50 w-4 h-4" />
@@ -95,17 +107,17 @@ export function AnalyzerInputs({
                 <p className="text-secondary/50 text-xs">Analysis Tools</p>
                 {/* ... Tools UI remains the same ... */}
                 <div className={`flex flex-row w-full justify-start items-center gap-2 text-sm p-1 rounded-md hover:cursor-pointer ${threatsActive ? 'bg-primary/60' : 'hover:bg-primary/60'}`}
-                    onClick={(e) => { e.preventDefault(); setThreatsActive(!threatsActive); }}>
+                    onClick={(e) => { e.preventDefault(); setThreatsActive(v => !v); }}>
                     <Flame className="w-4 h-4 text-secondary" />
                     <span className="text-secondary">Threats</span>
                 </div>
                 <div className={`flex flex-row w-full justify-start items-center gap-2 p-1 rounded-md text-sm hover:cursor-pointer ${attacksActive ? 'bg-primary/60' : 'hover:bg-primary/60'}`}
-                    onClick={(e) => { e.preventDefault(); setAttacksActive(!attacksActive); }}>
+                    onClick={(e) => { e.preventDefault(); setAttacksActive(v => !v); }}>
                     <Target className="w-4 h-4 text-secondary" />
                     <span className="text-secondary">Attacks</span>
                 </div>
                 <div className={`flex flex-row w-full justify-start items-center gap-2 p-1 rounded-md text-sm hover:cursor-pointer ${suggestionsActive ? 'bg-primary/60' : ' hover:bg-primary/60 '}`}
-                    onClick={(e) => { e.preventDefault(); setSuggestionActive(!suggestionsActive); }}>
+                    onClick={(e) => { e.preventDefault(); setSuggestionsActive(v => !v); }}>
                     <Lightbulb className="w-4 h-4 text-secondary " />
                     <span className="text-secondary">Suggestion</span>
                 </div>

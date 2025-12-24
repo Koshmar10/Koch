@@ -4,6 +4,7 @@ interface ArrowProps {
     from: string; // "row-col", e.g., "6-4"
     to: string;   // "row-col", e.g., "4-4"
     color?: string;
+    isGhost?: boolean
     opacity?: number;
     isFlipped?: boolean;
     squareSize: number; // Added prop
@@ -32,6 +33,7 @@ export const ChessArrow: React.FC<ArrowProps> = ({
     color = "#ff9900",
     opacity = 1.0,
     isFlipped = false,
+    isGhost = false,
     squareSize,
 }) => {
     const start = getSquareCenter(from, isFlipped, squareSize);
@@ -39,6 +41,8 @@ export const ChessArrow: React.FC<ArrowProps> = ({
 
     const markerId = `arrowhead-${color.replace('#', '')}`;
     const strokeWidth = squareSize * 0.2; // Proportional width
+
+    const effectiveOpacity = isGhost ? Math.min(opacity, 0.5) : opacity;
 
     return (
         <>
@@ -63,7 +67,7 @@ export const ChessArrow: React.FC<ArrowProps> = ({
                 stroke={color}
                 strokeWidth={strokeWidth}
                 markerEnd={`url(#${markerId})`}
-                opacity={opacity}
+                opacity={effectiveOpacity}
                 strokeLinecap="round"
             />
         </>

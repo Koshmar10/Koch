@@ -1,34 +1,44 @@
-use crate::analyzer::analyzer::EngineCommand;
-use crate::analyzer::board_interactions::AnalyzerController;
+use crate::analyzer::analyzer::{AnalyzerController, EngineCommand};
 use crate::{database, engine::Board, game::controller::GameController};
 
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Mutex;
 use stockfish::{EngineEval, Stockfish};
 use ts_rs::TS;
 
-#[derive(Clone, Debug, TS, Serialize)]
+#[derive(Clone, Debug, TS, Serialize, Deserialize)]
 #[ts(export)]
 pub enum EvalKind {
     Mate,
     Centipawn,
 }
-#[derive(Clone, Debug, TS, Serialize)]
+
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct PvLineData {
     pub moves: String,
     pub eval_kind: EvalKind,
     pub eval_value: i32,
+}
+
+impl std::fmt::Display for PvLineData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.eval_kind {
+            EvalKind::Mate => write!(f, "{} | Eval: (mate {})", self.moves, self.eval_value),
+            EvalKind::Centipawn => write!(f, "{} | Eval:  (cp {})", self.moves, self.eval_value),
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, ts_rs::TS)]
@@ -40,6 +50,69 @@ pub struct PvObject {
     pub lines: HashMap<u8, PvLineData>,
 }
 
+impl std::fmt::Display for PvObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //writeln!(f, "FEN: {}", self.fen)?;
+        //writeln!(f, "PV FEN: {}", self.fen)?;
+        writeln!(f, "Engine Lines:")?;
+        if self.lines.is_empty() {
+            writeln!(f, "  <no lines>")?;
+            return Ok(());
+        }
+        let mut entries: Vec<(&u8, &PvLineData)> = self.lines.iter().collect();
+        entries.sort_by_key(|(k, _)| *k);
+        for (k, line) in entries {
+            writeln!(f, "  {}. {}", k, line)?;
+        }
+        Ok(())
+    }
+}
+impl PvObject {
+    /// Return the first move (as a string) of the highest-rated PV line, if any.
+    /// The "highest-rated" line is chosen by a simple numeric score:
+    /// - Centipawn evaluations use their raw value.
+    /// - Mate evaluations are given very large magnitude values so mate results
+    ///   outrank centipawn scores (positive mate is very good, negative mate very bad).
+    pub fn best_first_move(&self) -> Option<String> {
+        fn score_of(line: &PvLineData) -> f64 {
+            const MATE_BASE: f64 = 1_000_000.0;
+            match line.eval_kind {
+                EvalKind::Mate => {
+                    if line.eval_value >= 0 {
+                        MATE_BASE - (line.eval_value as f64)
+                    } else {
+                        -MATE_BASE - (line.eval_value as f64)
+                    }
+                }
+                EvalKind::Centipawn => line.eval_value as f64,
+            }
+        }
+
+        fn first_move_from_moves(moves: &str) -> Option<String> {
+            for token in moves.split_whitespace() {
+                let t = token.trim();
+                // skip move numbers like "1." or "1..."
+                if t.contains('.') {
+                    continue;
+                }
+                // remove common trailing annotation characters but keep SAN like O-O, exd5, etc.
+                let cleaned = t.trim_end_matches(|c: char| matches!(c, '+' | '#' | '!' | '?'));
+                if !cleaned.is_empty() {
+                    return Some(cleaned.to_string());
+                }
+            }
+            None
+        }
+
+        let best = self.lines.values().max_by(|a, b| {
+            score_of(a)
+                .partial_cmp(&score_of(b))
+                .unwrap_or(Ordering::Equal)
+        })?;
+
+        first_move_from_moves(&best.moves)
+    }
+}
 impl Default for PvObject {
     fn default() -> Self {
         Self {
@@ -64,7 +137,8 @@ impl Default for PvObject {
             "chronos": "Blackmar gambit"
         }
     }, */
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export)]
 pub struct Settings {
     pub corrupted: bool,
     pub map: HashMap<String, String>,
@@ -100,7 +174,7 @@ pub struct ServerState<'a> {
     pub opening_index: Option<HashMap<String, OpeningEntry<'a>>>,
     pub game_controller: Option<GameController>,
     pub analyzer_controller: AnalyzerController,
-    pub analyzer_tx: Option<Sender<EngineCommand>>,
+    pub analyzer_tx: Option<SyncSender<EngineCommand>>,
     pub analyzer_rx: Option<Receiver<PvObject>>,
     pub total_memory: f64,
     pub nbcpu: usize,

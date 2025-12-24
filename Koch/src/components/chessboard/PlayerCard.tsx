@@ -6,13 +6,20 @@ interface Props {
     color: PieceColor;
     player: string;
     rating?: string | number;
+    clock?: string | number;      // new: clock display (e.g. "0:09:58")
+    isTurn?: boolean;             // new: whether it's this player's turn
 }
 
-export function PlayerCard({ display, player, color, rating }: Props) {
+export function PlayerCard({ display, player, color, rating, clock, isTurn }: Props) {
     if (!display) return null;
 
+    const containerClasses = `
+        flex items-center gap-3 w-full px-3 py-2 rounded-lg bg-primary/20 border border-white/5 shadow-sm transition-colors
+        ${isTurn ? "ring-2 ring-accent/50 bg-primary/30" : "hover:bg-primary/30"}
+    `;
+
     return (
-        <div className="flex items-center gap-3 w-full px-3 py-2 rounded-lg bg-primary/20 border border-white/5 shadow-sm transition-colors hover:bg-primary/30">
+        <div className={containerClasses}>
             {/* Avatar Square */}
             <div className={`
                 relative flex items-center justify-center w-10 h-10 rounded-md shadow-inner
@@ -28,14 +35,31 @@ export function PlayerCard({ display, player, color, rating }: Props) {
             </div>
 
             {/* Player Details */}
-            <div className="flex flex-col justify-center">
-                <span className="text-sm font-bold text-secondary tracking-tight leading-tight truncate max-w-[150px]">
-                    {player}
-                </span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] font-mono text-secondary/50 bg-white/5 px-1.5 py-0.5 rounded">
-                        {rating || "Unrated"}
+            <div className="flex-1 flex items-center justify-between">
+                <div className="flex flex-col justify-center min-w-0">
+                    <span className="text-sm font-bold text-secondary tracking-tight leading-tight truncate max-w-[150px]">
+                        {player}
                     </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-mono text-secondary/50 bg-white/5 px-1.5 py-0.5 rounded">
+                            {rating ?? "Unrated"}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Right side: clock and turn indicator */}
+                <div className="flex flex-col items-end ml-3">
+                    {typeof clock !== "undefined" && (
+                        <div className={`
+                            px-3 py-1 rounded-lg shadow bg-black/80 border border-white/10
+                            flex items-center justify-center min-w-[70px]
+                            ${isTurn ? "ring-2 ring-accent/60" : ""}
+                        `}>
+                            <span className={`text-md font-mono tracking-widest ${isTurn ? "text-accent font-bold" : "text-secondary/90"}`}>
+                                {clock}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -1,4 +1,5 @@
 import { AppScreen } from "../App"
+import { Home, Play, LineChart, History, Settings } from "lucide-react";
 
 interface SideBarProps {
     handleClick: (screen: AppScreen) => void;
@@ -20,53 +21,51 @@ export function Sidebar({ handleClick, selectedScreen }: SideBarProps) {
                 <span className="w-fit h-fit px-5 py-3 rounded-lg text-secondary bg-accent text-xl">K</span>
             </div>
 
-            <div className="flex flex-col px-2 gap-4 items-center">
-                <div
-                    className={`${computeStyle("Home")}`}
+            <div className="h-full flex flex-col px-2 gap-4 items-center">
+
+                <button
+                    className={computeStyle("Home")}
                     aria-label="Home"
                     onClick={() => handleClick("Home")}
                 >
-                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 11.5 12 4l9 7.5" />
-                        <path d="M5 10v10h14V10" />
-                        <path d="M9 14h6v6H9z" />
-                    </svg>
-                </div>
+                    <Home className="w-6 h-6" />
+                </button>
 
-                <div
+                <button
                     className={computeStyle("Pve")}
                     aria-label="Play"
                     onClick={() => handleClick("Pve")}
                 >
-                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor">
-                        <path d="M6 4v16l14-8L6 4z" />
-                    </svg>
-                </div>
+                    <Play className="w-6 h-6" />
+                </button>
 
-                <div
+                <button
                     className={computeStyle("Analyzer")}
                     aria-label="Analysis"
                     onClick={() => handleClick("Analyzer")}
                 >
-                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 19h16" />
-                        <path d="M8 19V8" />
-                        <path d="M12 19V4" />
-                        <path d="M16 19v-6" />
-                    </svg>
-                </div>
+                    <LineChart className="w-6 h-6" />
+                </button>
 
-                <div
+                <button
                     className={computeStyle("History")}
                     aria-label="History"
                     onClick={() => handleClick("History")}
                 >
-                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M12 7v5l3 3" />
-                    </svg>
-                </div>
+                    <History className="w-6 h-6" />
+                </button>
+
+
             </div>
-        </div>
+            <div className="flex justify-center h-auto p-5 border-t-[1px] border-white/20 ">
+                <button
+                    className={computeStyle("Settings")}
+                    aria-label="Settings"
+                    onClick={() => handleClick("Settings")}
+                >
+                    <Settings />
+                </button>
+            </div>
+        </div >
     );
 }

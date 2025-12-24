@@ -256,7 +256,7 @@ export function Pve() {
                         <ChessBoard
 
                             board={chessBoard}
-                            squareSize={60}
+                            squareSize={80}
                             onMove={handlePveBoardMove}
                             flipped={gameState?.player === "Black"}
                             lastMove={lastMove}

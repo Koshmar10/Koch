@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // Ensure TerminationBy and GameResult are imported so they can be used in the serialized struct
-use crate::analyzer::board_interactions::AnalyzerController;
-use crate::engine::board::{GameResult, TerminationBy};
+
+use crate::analyzer::analyzer::{AnalyzerController, UndoInfo};
+use crate::engine::board::{GamePhase, GameResult, TerminationBy};
 use crate::engine::{Board, PieceColor};
 
 // 1. Define the compressed metadata structure
@@ -20,6 +21,13 @@ pub struct SerializedBoardMetaData {
     pub white_player_name: String,
     pub black_player_name: String,
     pub opening: Option<String>,
+    pub event: Option<String>,
+    pub site: Option<String>,
+    pub round: Option<String>,
+    pub time_control: Option<String>,
+    pub end_time: Option<String>,
+    pub link: Option<String>,
+    pub eco: Option<String>,
 }
 
 #[derive(Debug, TS, Serialize, Deserialize)]
@@ -28,6 +36,7 @@ pub struct SerializedBoard {
     pub fen: String,
     pub piece_moves: String,
     pub piece_index_mapper: String,
+    pub game_phase: GamePhase,
     pub meta_data: SerializedBoardMetaData, // Updated type
 }
 
@@ -37,6 +46,8 @@ pub struct SerializedAnalyzerController {
     pub game_id: usize,
     pub serialized_board: SerializedBoard,
     pub current_ply: i32,
+    pub board_undo: Vec<UndoInfo>,
+    //pub chat_history: AiChatStructure,
 }
 
 pub fn serialize_board(board: &Board) -> SerializedBoard {
@@ -56,7 +67,6 @@ pub fn serialize_board(board: &Board) -> SerializedBoard {
         piece_index_mapper.pop();
     }
 
-    // ...existing piece_moves logic...
     let mut piece_moves = String::new();
     for (id, moves) in &board.move_cache {
         piece_moves.push_str(&format!("{}:", id));
@@ -80,16 +90,14 @@ pub fn serialize_board(board: &Board) -> SerializedBoard {
         piece_moves.pop();
     }
 
-    // 2. Compress the move list into a space-separated string
     let move_list_str = board
         .meta_data
         .move_list
         .iter()
-        .map(|m| m.uci.clone())
+        .map(|m| m.to_string())
         .collect::<Vec<String>>()
         .join(" ");
-
-    // 3. Construct the serialized metadata
+    // dbg!(&move_list_str);
     let serialized_meta = SerializedBoardMetaData {
         starting_position: board.meta_data.starting_position.clone(),
         date: board.meta_data.date.clone(),
@@ -101,6 +109,13 @@ pub fn serialize_board(board: &Board) -> SerializedBoard {
         white_player_name: board.meta_data.white_player_name.clone(),
         black_player_name: board.meta_data.black_player_name.clone(),
         opening: board.meta_data.opening.clone(),
+        event: board.meta_data.event.clone(),
+        site: board.meta_data.site.clone(),
+        round: board.meta_data.round.clone(),
+        time_control: board.meta_data.time_control.clone(),
+        end_time: board.meta_data.end_time.clone(),
+        link: board.meta_data.link.clone(),
+        eco: board.meta_data.eco.clone(),
     };
 
     SerializedBoard {
@@ -108,6 +123,7 @@ pub fn serialize_board(board: &Board) -> SerializedBoard {
         piece_moves: piece_moves,
         piece_index_mapper: piece_index_mapper,
         meta_data: serialized_meta,
+        game_phase: board.game_phase.clone(),
     }
 }
 
@@ -118,5 +134,7 @@ pub fn serialize_analyzer_controller(
         game_id: controller.game_id,
         serialized_board: serialize_board(&controller.board),
         current_ply: controller.current_ply as i32,
+        board_undo: controller.board_undo.clone(),
+        //chat_history: controller.chat_history.clone(),
     }
 }

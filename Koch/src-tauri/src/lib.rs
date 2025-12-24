@@ -6,26 +6,38 @@ use std::io::Write;
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
+
 use std::time::Instant;
 use sysinfo::System;
 //pub mod game;
+pub mod ai;
 pub mod analyzer;
 pub mod database;
 pub mod etc;
 pub mod game;
 pub mod server;
+use crate::analyzer::analyzer::get_threat;
+use crate::analyzer::analyzer::LocalChat;
+
 use crate::analyzer::analyzer::{
     get_analyzer_settings, set_analyzer_fen, set_engine_option, start_analyzer_thread,
     stop_analyzer,
 };
-use crate::analyzer::analyzer::{try_analyzer_move, EngineCommand};
-use crate::analyzer::board_interactions::{get_board_at_index, get_fen, AnalyzerController};
-use crate::database::create::{get_game_by_id, get_game_list};
+use crate::analyzer::analyzer::{try_analyzer_move, AnalyzerController, EngineCommand};
+use crate::analyzer::board_interactions::{get_board_at_index, get_fen};
+use crate::database::create::create_database;
+use crate::database::create::get_game_by_id;
+use crate::database::create::get_game_chat_by_id;
+use crate::database::create::get_game_list;
+use crate::database::create::load_pgn_game;
+use crate::database::integrations::sync_with_chessdotcom;
 use crate::engine::board::{BoardMetaData, EvalResponse, GameResult};
 use crate::engine::serializer::serialize_board;
 use crate::engine::serializer::SerializedBoard;
+use crate::server::server::Settings;
 use crate::server::server::{get_system_information, load_settings};
 // Added PvLineData
+use crate::ai::message::send_llm_request;
 use crate::{
     engine::board,
     engine::{board::PieceMoves, Board, PieceColor, PieceType},
@@ -151,11 +163,11 @@ fn update_gameloop(
     if state.board.turn == engine_color {
         let fen = state.board.to_string();
         if let Some(uci) = make_engine_move(&mut state, fen) {
-            if let Some((from, to)) = state.board.decode_uci_move(uci.clone()) {
+            if let Some((from, to, promotion)) = state.board.decode_uci_move(&uci) {
                 // Capture target before move
                 let captured_before = state.board.squares[to.0 as usize][to.1 as usize].clone();
 
-                match state.board.move_piece(from, to) {
+                match state.board.move_piece(from, to, promotion) {
                     Ok(mv_struct) => {
                         // Track captures for UI
                         if mv_struct.is_capture {
@@ -234,7 +246,7 @@ fn try_move(
     let captured_before =
         state.board.squares[dest_square.0 as usize][dest_square.1 as usize].clone();
 
-    match state.board.move_piece(src_square, dest_square) {
+    match state.board.move_piece(src_square, dest_square, promotion) {
         Ok(mut move_struct) => {
             if move_struct.is_capture {
                 if let Some(captured_piece) = captured_before {
@@ -251,13 +263,6 @@ fn try_move(
                             .push((captured_piece.kind, captured_piece.color)),
                     }
                 }
-            }
-            if promotion.is_some() {
-                state.board.promote_pawn(dest_square, promotion.unwrap());
-                move_struct.promotion = promotion;
-                move_struct.uci = state
-                    .board
-                    .encode_uci_move(src_square, dest_square, promotion)
             }
             state.board.meta_data.move_list.push(move_struct);
             // Refresh move cache after a successful move
@@ -300,68 +305,7 @@ struct MyState {
 fn board_fen(board: Board) -> String {
     return board.to_string();
 }
-#[tauri::command]
-fn game_into_db(state: tauri::State<'_, Mutex<ServerState>>) -> Result<(), String> {
-    let mut state = state.lock().unwrap();
-    let board = state.board.clone();
-    match &mut state.engine {
-        Some(stockfish) => {
-            let id = database::create::insert_game_and_get_id(&board.meta_data).unwrap_or(0);
-            let game_moves = board.meta_data.move_list;
-            let board_start_fen = board.meta_data.starting_position;
-            let mut test_board = Board::from(&board_start_fen);
-            for (idx, mv) in game_moves.iter().enumerate() {
-                let mut new_mv = mv.clone();
 
-                let (from, to) = test_board.decode_uci_move(new_mv.uci.clone()).unwrap();
-                test_board
-                    .move_piece(from, to)
-                    .inspect_err(|e| eprintln!("{:?}", e))
-                    .ok();
-                stockfish
-                    .set_fen_position(&test_board.to_string())
-                    .inspect_err(|e| eprintln!("{e}"))
-                    .ok();
-                match stockfish.go() {
-                    Ok(out) => {
-                        let eval = out.eval();
-                        let eval_kind = match &eval.eval_type() {
-                            stockfish::EvalType::Centipawn => board::EvalType::Centipawn,
-                            stockfish::EvalType::Mate => board::EvalType::Mate,
-                        };
-                        let eval_score = eval.value();
-                        new_mv.evaluation = EvalResponse {
-                            value: eval_score as f32,
-                            kind: eval_kind,
-                        };
-                        new_mv.move_number = (idx as u32) + 1;
-                        new_mv.time_stamp = idx as f32;
-                        println!("{:?}", &new_mv);
-                    }
-                    Err(e) => {
-                        return Err(e.to_string());
-                    }
-                }
-                match database::create::insert_single_move(id, new_mv) {
-                    Ok(_) => {
-                        println!("move added");
-                    }
-                    Err(e) => {
-                        println!("{}", e);
-                        return Err(e.to_string());
-                    }
-                }
-            }
-            return Ok(());
-        }
-        None => {
-            println!("nu e stockfish");
-            return Ok(());
-        }
-    }
-
-    Ok(())
-}
 #[tauri::command]
 fn fetch_game_history() -> Vec<BoardMetaData> {
     match get_game_list() {
@@ -386,17 +330,28 @@ fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> Analyze
     if state.analyzer_controller.game_id == id {
         return state.analyzer_controller.clone();
     }
+    let game_chat = match get_game_chat_by_id(id) {
+        Ok(chat) => chat,
+        Err(e) => {
+            eprintln!("fetch_game: get_game_chat_by_id DB error: {e}");
+            LocalChat::default()
+        }
+    };
+
     match get_game_by_id(id) {
         Ok(list) => {
             let mut analyzer = AnalyzerController::default();
+            let move_count = list.move_list.len();
             let mut board = Board::from(&list.starting_position);
             board.meta_data = list; // includes full move_list from DB
             analyzer.board = board;
             analyzer.game_id = id;
             analyzer.current_ply = -1;
+            analyzer.chat_history = game_chat;
 
             // Persist so do_move/undo_move operate on the same instance
             state.analyzer_controller = analyzer.clone();
+            println!("Game chat has id {}", analyzer.chat_history.chat_id);
             analyzer
         }
         Err(e) => {
@@ -405,23 +360,44 @@ fn fetch_game(state: tauri::State<'_, Mutex<ServerState>>, id: usize) -> Analyze
         }
     }
 }
-
+#[tauri::command]
+fn get_settings(state: tauri::State<'_, Mutex<ServerState>>) -> Settings {
+    let mut state = state.lock().unwrap();
+    return state.settings.clone();
+}
+#[tauri::command]
+fn update_settings(state: tauri::State<'_, Mutex<ServerState>>, key: String, val: String) {
+    let mut state = state.lock().unwrap();
+    state.settings.update(key, val);
+    state.settings.save();
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         // Initialize state with default (None channels)
         .manage(Mutex::new(ServerState::default()))
         .setup(|app| {
+            println!("[DEBUG] Creating database...");
+
+            create_database();
+            println!("[DEBUG] Initializing system info...");
             let mut sys = System::new_all();
             sys.refresh_all();
             let mem_bytes = sys.total_memory();
             let nb_cpu = sys.cpus().len();
             let ram_capacity = (mem_bytes / 1024 / 1024) as f64 / 1024.0;
+            println!(
+                "[DEBUG] System RAM: {:.2} GB, CPUs: {}",
+                ram_capacity, nb_cpu
+            );
+
             // Get AppHandle
             let handle = app.handle().clone();
-            
+            println!("[DEBUG] App handle acquired.");
+
             // Start thread with handle
             let (tx, rx) = start_analyzer_thread(handle);
+            println!("[DEBUG] Analyzer thread started.");
 
             // Update state with channels
             let state = app.state::<Mutex<ServerState>>();
@@ -430,7 +406,8 @@ pub fn run() {
             state.analyzer_rx = Some(rx);
             state.total_memory = ram_capacity;
             state.nbcpu = nb_cpu;
-           
+            println!("[DEBUG] ServerState updated with analyzer channels, RAM, and CPU info.");
+
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -445,7 +422,6 @@ pub fn run() {
             update_gameloop,
             promote_pawn,
             fetch_game_history,
-            game_into_db,
             fetch_game,
             fetch_default_game,
             set_analyzer_fen,
@@ -455,7 +431,13 @@ pub fn run() {
             get_board_at_index,
             get_system_information,
             set_engine_option,
-            get_analyzer_settings
+            get_analyzer_settings,
+            load_pgn_game,
+            get_settings,
+            update_settings,
+            sync_with_chessdotcom,
+            get_threat,
+            send_llm_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

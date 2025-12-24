@@ -132,28 +132,51 @@ export function deserialzer(board_data: SerializedBoard): Board {
     // Note: We only have the UCI string here, so we create a partial MoveStruct.
     const moveList: MoveStruct[] = [];
     if (board_data.meta_data.move_list && board_data.meta_data.move_list.length > 0) {
-        const uciMoves = board_data.meta_data.move_list.split(' ');
-        uciMoves.forEach(uci => {
-            // We construct a minimal MoveStruct since we don't have full details in the compressed string
-            // This is sufficient for display lists that rely on UCI
-            const promoChar = uci.length === 5 ? uci[4].toLowerCase() : '';
-            const promoMap: Record<string, PieceType> = {
-                q: "Queen",
-                r: "Rook",
-                b: "Bishop",
-                n: "Knight",
-            };
+        const entries = board_data.meta_data.move_list.split(' ');
+        let moveNumber = 1;
+
+        const promoMap: Record<string, PieceType> = {
+            q: "Queen",
+            r: "Rook",
+            b: "Bishop",
+            n: "Knight",
+        };
+
+        for (const entry of entries) {
+            if (!entry) continue;
+            const parts = entry.split('|');
+            // Expect: uci|san|clock|time_stamp|nag|annotation
+            const uci = parts[0] ?? '';
+            const sanPart = parts[1] ?? '';
+            const clockPart = parts[2] ?? null;
+            const timeStampPart = parts[3] ?? '';
+            const nagPart = parts[4] ?? null;
+            const annotationPart = parts[5] ?? null;
+
+            // determine promotion from UCI (e.g. e7e8q)
+            let promotion: PieceType | null = null;
+            if (uci && uci.length >= 5) {
+                const possiblePromo = uci[uci.length - 1].toLowerCase();
+                if (promoMap[possiblePromo]) promotion = promoMap[possiblePromo];
+            }
+
+            const time_stamp = Number(timeStampPart);
+            const nag = nagPart && nagPart !== '-' ? (isNaN(Number(nagPart)) ? nagPart : Number(nagPart)) : null;
+            const clock = clockPart && clockPart !== '-' ? clockPart : null;
+            const san = sanPart && sanPart !== '-' ? sanPart : uci;
 
             moveList.push({
-                move_number: moveList.length + 1,
-                san: uci, // Placeholder; SAN needs regeneration from position
+                move_number: moveNumber++,
+                san,
                 uci,
-                promotion: promoMap[promoChar] ?? null,
-                is_capture: false, // UCI doesn't encode captures explicitly
-                evaluation: {} as any, // Placeholder; no eval data in serialized board
-                time_stamp: Date.now(),
-            });
-        });
+                promotion,
+                is_capture: san.includes('x'),
+                time_stamp: !isNaN(time_stamp) ? time_stamp : Date.now(),
+                clock,
+                annotation: annotationPart,
+                nag,
+            } as MoveStruct);
+        }
     }
 
     // 6. Construct final Board object
@@ -168,6 +191,7 @@ export function deserialzer(board_data: SerializedBoard): Board {
         black_big_castle: castlingStr.includes('q'),
         white_small_castle: castlingStr.includes('K'),
         black_small_castle: castlingStr.includes('k'),
+        game_phase: board_data.game_phase,
         meta_data: {
             move_list: moveList,
             starting_position: board_data.meta_data.starting_position,
@@ -178,19 +202,20 @@ export function deserialzer(board_data: SerializedBoard): Board {
             black_player_elo: board_data.meta_data.black_player_elo,
             white_player_name: board_data.meta_data.white_player_name,
             black_player_name: board_data.meta_data.black_player_name,
-            opening: board_data.meta_data.opening
+            opening: board_data.meta_data.opening,
+            event: board_data.meta_data.event ?? null,
+            site: board_data.meta_data.site ?? null,
+            round: board_data.meta_data.round ?? null,
+            time_control: board_data.meta_data.time_control ?? null,
+            end_time: board_data.meta_data.end_time ?? null,
+            link: board_data.meta_data.link ?? null,
+            eco: board_data.meta_data.eco ?? null,
         },
         ui: {
-            selected_piece: null,
-            moved_piece: null,
             pov: "White",
             white_taken: [],
             black_taken: [],
-            promtion_pending: null,
-            checkmate_square: null,
-            bar_eval: 0
         },
-
         been_modified: false,
         next_id: 0,
         ply_count: 0
@@ -238,5 +263,20 @@ export function deserializeAnalyzerController(data: SerializedAnalyzerController
         game_id: data.game_id,
         board: deserialzer(data.serialized_board),
         current_ply: data.current_ply,
-    };
+        board_undo: data.board_undo,
+        last_threat: null,
+        last_pv: null,
+        chat_history: null
+    }
+}
+export function fileRankToRowCol(square: string): [number, number] {
+    const files = "abcdefgh";
+    const file = square[0];
+    const rank = square[1];
+    const col = files.indexOf(file);
+    const row = 8 - parseInt(rank, 10);
+    if (col < 0 || col > 7 || row < 0 || row > 7 || isNaN(row)) {
+        throw new Error(`Invalid square notation: "${square}"`);
+    }
+    return [row, col];
 }

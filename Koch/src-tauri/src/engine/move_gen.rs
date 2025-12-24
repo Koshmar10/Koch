@@ -107,13 +107,23 @@ impl Board {
     fn add_castle_options(&self, color: PieceColor, quiet_moves: &mut Vec<(u8, u8)>) {
         match color {
             PieceColor::Black => {
-                for rook_sq in &[(0, 0), (0, 7)] {
+                let mut can_castle_queen_side = true;
+                let mut can_castle_king_side = true;
+                for (i, rook_sq) in [(0, 0), (0, 7)].iter().enumerate() {
                     if let Some(rook) = self.squares[rook_sq.0][rook_sq.1] {
                         if rook.has_moved {
-                            return;
+                            if i == 0 {
+                                can_castle_queen_side = false;
+                            } else {
+                                can_castle_king_side = false;
+                            }
                         }
                     } else {
-                        return;
+                        if i == 0 {
+                            can_castle_queen_side = false;
+                        } else {
+                            can_castle_king_side = false;
+                        }
                     }
                 }
                 //precompute color associated with piece ids
@@ -128,8 +138,7 @@ impl Board {
                 //assume castleing rights to be true
                 let queen_travel_squares = [(0, 3), (0, 2)];
                 let king_travel_squares = [(0, 5), (0, 6)];
-                let mut can_castle_queen_side = true;
-                let mut can_castle_king_side = true;
+
                 // check if travel_squares are free
                 let mut kingside_free = true;
                 for travel_square in king_travel_squares {
@@ -141,19 +150,21 @@ impl Board {
                         None => {}
                     }
 
-                    let keys = self.move_cache.keys();
-                    for key in keys {
-                        if let Some(x) = id_color_map.get(key) {
-                            if *x == color {
-                                continue;
+                    // Use get_attack_squares for each enemy piece
+                    for row in &self.squares {
+                        for sq in row {
+                            if let Some(enemy_piece) = sq {
+                                if enemy_piece.color != color {
+                                    let attacks = self.get_attack_squares(enemy_piece);
+                                    if attacks.contains(&travel_square) {
+                                        kingside_free = false;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        let piece_moves = self.move_cache.get(key);
-                        if let Some(moves) = piece_moves {
-                            if moves.attacks.contains(&travel_square) {
-                                kingside_free = false;
-                                break;
-                            }
+                        if !kingside_free {
+                            break;
                         }
                     }
                 }
@@ -168,19 +179,20 @@ impl Board {
                         None => {}
                     }
 
-                    let keys = self.move_cache.keys();
-                    for key in keys {
-                        if let Some(x) = id_color_map.get(key) {
-                            if *x == color {
-                                continue;
+                    for row in &self.squares {
+                        for sq in row {
+                            if let Some(enemy_piece) = sq {
+                                if enemy_piece.color != color {
+                                    let attacks = self.get_attack_squares(enemy_piece);
+                                    if attacks.contains(&travel_square) {
+                                        queenside_free = false;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        let piece_moves = self.move_cache.get(key);
-                        if let Some(moves) = piece_moves {
-                            if moves.attacks.contains(&travel_square) {
-                                queenside_free = false;
-                                break;
-                            }
+                        if !queenside_free {
+                            break;
                         }
                     }
                 }
@@ -203,13 +215,23 @@ impl Board {
                 }
             }
             PieceColor::White => {
-                for rook_sq in &[(7, 0), (7, 7)] {
+                let mut can_castle_queen_side = true;
+                let mut can_castle_king_side = true;
+                for (i, rook_sq) in [(7, 0), (7, 7)].iter().enumerate() {
                     if let Some(rook) = self.squares[rook_sq.0][rook_sq.1] {
                         if rook.has_moved {
-                            return;
+                            if i == 0 {
+                                can_castle_queen_side = false;
+                            } else {
+                                can_castle_king_side = false;
+                            }
                         }
                     } else {
-                        return;
+                        if i == 0 {
+                            can_castle_queen_side = false;
+                        } else {
+                            can_castle_king_side = false;
+                        }
                     }
                 }
                 //precompute color associated with piece ids
@@ -224,8 +246,6 @@ impl Board {
                 // white travel squares on rank 7 (e1 -> g1 or c1)
                 let queen_travel_squares = [(7, 3), (7, 2)];
                 let king_travel_squares = [(7, 5), (7, 6)];
-                let mut can_castle_queen_side = true;
-                let mut can_castle_king_side = true;
 
                 // kingside path free and not attacked
                 let mut kingside_free = true;
@@ -237,20 +257,20 @@ impl Board {
                         }
                         None => {}
                     }
-
-                    let keys = self.move_cache.keys();
-                    for key in keys {
-                        if let Some(x) = id_color_map.get(key) {
-                            if *x == color {
-                                continue;
+                    for row in &self.squares {
+                        for sq in row {
+                            if let Some(enemy_piece) = sq {
+                                if enemy_piece.color != color {
+                                    let attacks = self.get_attack_squares(enemy_piece);
+                                    if attacks.contains(&travel_square) {
+                                        kingside_free = false;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        let piece_moves = self.move_cache.get(key);
-                        if let Some(moves) = piece_moves {
-                            if moves.attacks.contains(&travel_square) {
-                                kingside_free = false;
-                                break;
-                            }
+                        if !kingside_free {
+                            break;
                         }
                     }
                 }
@@ -266,19 +286,20 @@ impl Board {
                         None => {}
                     }
 
-                    let keys = self.move_cache.keys();
-                    for key in keys {
-                        if let Some(x) = id_color_map.get(key) {
-                            if *x == color {
-                                continue;
+                    for row in &self.squares {
+                        for sq in row {
+                            if let Some(enemy_piece) = sq {
+                                if enemy_piece.color != color {
+                                    let attacks = self.get_attack_squares(enemy_piece);
+                                    if attacks.contains(&travel_square) {
+                                        queenside_free = false;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        let piece_moves = self.move_cache.get(key);
-                        if let Some(moves) = piece_moves {
-                            if moves.attacks.contains(&travel_square) {
-                                queenside_free = false;
-                                break;
-                            }
+                        if !queenside_free {
+                            break;
                         }
                     }
                 }
@@ -307,7 +328,7 @@ impl Board {
         let captures = self.legalize_capture_moves(piece, captures);
         return captures;
     }
-    
+
     pub fn get_diagonal_moves(
         &self,
         piece: &ChessPiece,

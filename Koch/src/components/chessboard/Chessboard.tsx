@@ -10,7 +10,25 @@ import { PieceType } from "../../../src-tauri/bindings/PieceType";
 import { getImage } from "./utils";
 import { PlayerClock } from "./PlayerClock";
 import { PlayerCard } from "./PlayerCard";
+import { PieceLayer } from "./PieceLayer";
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
+const PROMOTION_PIECES: PieceType[] = ["Queen", "Rook", "Bishop", "Knight"];
 
+const DEFAULT_TIME = 1000 * 60 * 10; // 10 minutes
+
+export interface RenderedPiece {
+    piece: ChessPiece;
+    r: number;
+    c: number;
+    to_render: boolean; // NEW: Controls visibility instead of array removal
+}
+export interface GhostPiece {
+    kind: PieceType,
+    color: PieceColor,
+    r: number,
+    c: number,
+}
 
 interface ChessBoardProps {
     squareSize: number;
@@ -19,22 +37,33 @@ interface ChessBoardProps {
     lastMove?: [number[], number[]] | null;
     flipped?: boolean;
     isInteractive?: boolean;
+    whiteClock?: string | number; // <- NEW
+    blackClock?: string | number; // <- NEW
+    suggestion?: ArrowData | null;
+    threat?: ArrowData | null;
+    tintEnabled?: boolean; // when true show influence tint; when true do not render last-move/selection highlights
+    hoverTarget?: [number, number] | null;
+    ghostPieces?: GhostPiece[];
+    ghostArrows?: ArrowData[];
 }
 
-interface RenderedPiece {
-    piece: ChessPiece;
-    r: number;
-    c: number;
-    to_render: boolean; // NEW: Controls visibility instead of array removal
-}
+export function ChessBoard({
+    squareSize,
+    board,
+    onMove,
+    lastMove,
+    flipped = false,
+    isInteractive = false,
+    whiteClock,
+    blackClock,
+    suggestion = null,
+    threat = null,
+    tintEnabled = false,
+    hoverTarget = null,
+    ghostPieces = [],
+    ghostArrows = [],
 
-const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
-const PROMOTION_PIECES: PieceType[] = ["Queen", "Rook", "Bishop", "Knight"];
-
-const DEFAULT_TIME = 1000 * 60 * 10; // 10 minutes
-
-export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = false, isInteractive = false, }: ChessBoardProps) {
+}: ChessBoardProps) {
 
     const [selectedSquare, setSelectedSquare] = useState<number[] | null>(null)
     const [selectedMoves, setSelectedMoves] = useState<PieceMoves | null>(null)
@@ -255,9 +284,7 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
     };
 
     // Helper to get visual coordinates based on flip state
-    const getVisualCoords = (r: number, c: number) => {
-        return flipped ? [7 - r, 7 - c] : [r, c];
-    };
+
 
     // Helper to get logical coordinates from visual index
     const getLogicalCoords = (visualRow: number, visualCol: number) => {
@@ -299,10 +326,17 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
         <div className="flex flex-col gap-2">
 
             {/* Top Player Card (Opponent) */}
-            <PlayerCard display={true} color={flipped ? "White" : "Black"} player={flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name} />
+            <PlayerCard
+                display={true}
+                color={flipped ? "White" : "Black"}
+                player={flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name}
+                isTurn={board.turn === (flipped ? "White" : "Black")}
+                rating={flipped ? board.meta_data.white_player_elo : board.meta_data.black_player_elo}
+                clock={flipped ? whiteClock : blackClock} // <- pass appropriate clock
+            />
 
             <div className="relative inline-block" onContextMenu={handleContextMenu}>
-
+                <div className="absolute top-[-30px] left-0 ">{board.game_phase}</div>
                 {/* Board squares */}
                 <div
                     className="grid relative z-0"
@@ -319,12 +353,68 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
                         const [row, col] = getLogicalCoords(visualRow, visualCol);
                         const isDark = (visualRow + visualCol) % 2 === 1;
 
-                        const isSelected =
-                            (!!selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col) ||
-                            (!!lastMoveMade &&
-                                ((lastMoveMade[0][0] === row && lastMoveMade[0][1] === col) ||
-                                    (lastMoveMade[1][0] === row && lastMoveMade[1][1] === col)));
+                        // When tint is enabled we intentionally hide selected/last-move highlights
+                        const isSelected = tintEnabled
+                            ? false
+                            : (
+                                (!!selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col) ||
+                                (!!lastMoveMade &&
+                                    ((lastMoveMade[0][0] === row && lastMoveMade[0][1] === col) ||
+                                        (lastMoveMade[1][0] === row && lastMoveMade[1][1] === col)))
+                            );
 
+                        let tintColor: string | undefined = undefined;
+                        // Compute influence tints only when enabled
+                        if (tintEnabled) {
+                            let whiteInfluence = 0;
+                            let blackInfluence = 0;
+                            for (const [idStr, moves] of Object.entries(board.move_cache)) {
+                                const id = Number(idStr);
+                                const rendered = optimisticPieces.find(p => p.piece.id === id);
+                                if (!rendered) continue;
+                                const owner = rendered.piece.color;
+                                if (moves && Array.isArray(moves.attacks) && moves.attacks.some(([mr, mc]) => mr === row && mc === col)) {
+                                    if (owner === "White") whiteInfluence += 1;
+                                    else blackInfluence += 1;
+                                }
+                            }
+
+                            if (whiteInfluence === 0 && blackInfluence === 0) {
+                                tintColor = undefined;
+                            } else {
+                                // compute base alpha from influence intensity
+                                const computeAlpha = (diff: number, baseMin = 0.12, baseMaxDelta = 0.38) => {
+                                    const intensity = Math.min(diff, 7) / 7; // 0..1
+                                    return baseMin + intensity * baseMaxDelta; // numeric alpha
+                                };
+
+                                // adjust alpha depending on whether the underlying square is dark or light:
+                                // light squares -> slightly more opaque (makes tint pop)
+                                // dark squares  -> slightly less opaque (preserve base color)
+                                const opacityFactor = isDark ? 0.72 : 1.25;
+
+                                if (whiteInfluence > blackInfluence) {
+                                    const diff = whiteInfluence - blackInfluence;
+                                    let alpha = computeAlpha(diff);
+                                    alpha = Math.max(0.03, Math.min(1, alpha * opacityFactor));
+                                    tintColor = `rgba(37,99,235,${alpha.toFixed(3)})`; // blue for White control
+                                } else if (blackInfluence > whiteInfluence) {
+                                    const diff = blackInfluence - whiteInfluence;
+                                    let alpha = computeAlpha(diff);
+                                    alpha = Math.max(0.03, Math.min(1, alpha * opacityFactor));
+                                    tintColor = `rgba(220,38,38,${alpha.toFixed(3)})`; // red for Black control
+                                } else {
+                                    // equal non-zero -> contested/purple, slightly subtler
+                                    const intensity = Math.min(whiteInfluence, 7);
+                                    let alpha = computeAlpha(intensity, 0.10, 0.35);
+                                    alpha = Math.max(0.03, Math.min(1, alpha * opacityFactor));
+                                    tintColor = `rgba(128,0,128,${alpha.toFixed(3)})`; // contested -> purple
+                                }
+                            }
+                        }
+
+                        // if tint is disabled, ensure tintColor is undefined so base UI highlights render
+                        // (tintColor already undefined when tintEnabled=false)
                         // Annotation Logic
                         const isLeftEdge = visualCol === 0;
                         const isBottomEdge = visualRow === 7;
@@ -342,8 +432,10 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
                                     key={`${row}-${col}`}
                                     dark={isDark}
                                     selected={isSelected}
+                                    tint={tintColor}
                                     size={squareSize}
                                     attackMove={false}
+                                    hover={hoverTarget ? hoverTarget[0] == row && hoverTarget[1] == col : false}
                                     inCheck={isInCheck(row, col, board.squares[row][col]?.color)}
                                     captureMove={!!selectedMoves && selectedMoves.capture_moves.some((m) => m[0] === row && m[1] === col)}
                                     quietMove={!!selectedMoves && selectedMoves.quiet_moves.some((m) => m[0] === row && m[1] === col)}
@@ -370,31 +462,12 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
                 </div>
 
                 {/* Pieces layer on top */}
-                <div
-                    className="absolute top-0 left-0 z-10 pointer-events-none"
-                    style={{
-                        width: squareSize * 8,
-                        height: squareSize * 8,
-                    }}
-                >
-                    {optimisticPieces.map(({ piece, r, c, to_render }) => {
-                        if (!to_render) return null;
-
-                        const [visualR, visualC] = getVisualCoords(r, c);
-                        return (
-                            <Piece
-                                key={piece.id}
-                                size={squareSize}
-                                row={visualR}
-                                col={visualC}
-                                kind={piece.kind}
-                                color={piece.color}
-                            />
-                        );
-                    })}
-                </div>
+                <PieceLayer flipped={flipped} optimisticPieces={optimisticPieces} squareSize={squareSize} ghostPieces={ghostPieces} />
                 <ArrowLayer
                     arrows={arrows}
+                    suggestion={suggestion}
+                    threat={threat}
+                    ghostArrows={ghostArrows}
                     isFlipped={flipped}
                     squareSize={squareSize}
                 />
@@ -424,7 +497,14 @@ export function ChessBoard({ squareSize, board, onMove, lastMove, flipped = fals
             </div>
 
             {/* Bottom Player Card (Self) */}
-            <PlayerCard display={true} color={!flipped ? "White" : "Black"} player={!flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name} />
+            <PlayerCard
+                display={true}
+                color={!flipped ? "White" : "Black"}
+                player={!flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name}
+                isTurn={board.turn === (!flipped ? "White" : "Black")}
+                rating={!flipped ? board.meta_data.white_player_elo : board.meta_data.black_player_elo}
+                clock={!flipped ? whiteClock : blackClock} // <- pass appropriate clock
+            />
 
         </div >
     )

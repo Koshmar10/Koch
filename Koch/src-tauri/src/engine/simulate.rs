@@ -1,4 +1,7 @@
-use crate::engine::{Board, ChessPiece, PieceColor, PieceType};
+use crate::{
+    engine::{Board, ChessPiece, PieceColor, PieceType},
+    game::controller::TerminationReason,
+};
 
 impl Board {
     pub fn simulate_move(&self, piece: &ChessPiece, new_pos: &(u8, u8)) -> bool {
@@ -114,5 +117,16 @@ impl Board {
     pub fn has_lost(&mut self) -> bool {
         // route through corrected names
         self.is_checkmate() || self.is_stalemate() || self.halfmove_clock == 50
+    }
+    pub fn get_termination_reason(&mut self) -> Option<TerminationReason> {
+        if self.is_checkmate() {
+            Some(TerminationReason::Checkmate)
+        } else if self.is_stalemate() {
+            Some(TerminationReason::StaleMate)
+        } else if self.halfmove_clock == 50 {
+            Some(TerminationReason::Draw)
+        } else {
+            None
+        }
     }
 }

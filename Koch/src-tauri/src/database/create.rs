@@ -4,6 +4,7 @@ use crate::engine::board::{
 };
 use crate::engine::{Board, PieceType};
 use crate::game;
+use crate::game::controller::TerminationReason;
 use regex::Regex;
 use rusqlite::{params, Connection, Result};
 
@@ -29,6 +30,7 @@ pub fn create_database() -> Result<()> {
             black_elo NUMBER NOT NULL,
             result TEXT NOT NULL,
             opening TEXT NOT NULL,
+            time_control TEXT,
             pgn_data TEXT NOT NULL
         );",
         (),
@@ -79,46 +81,91 @@ pub fn parse_game_result(s: &str) -> GameResult {
 }
 
 // Helper: parse termination string into TerminationBy
-fn parse_termination(s: &str) -> TerminationBy {
+fn parse_termination(s: &str) -> TerminationReason {
     let s_l = s.to_lowercase();
     if s_l.contains("checkmate") || s_l.contains("mate") {
-        TerminationBy::Checkmate
+        TerminationReason::Checkmate
     } else if s_l.contains("stalemate") || s_l.contains("stale") {
-        TerminationBy::StaleMate
+        TerminationReason::StaleMate
     } else if s_l.contains("resign") || s_l.contains("resignation") {
         // prefer a Resignation variant if present, otherwise fall back to Unknown
         #[allow(non_snake_case)]
         {
             // try to use Resignation if exists
-            TerminationBy::Resignation
+            TerminationReason::Resignation
         }
     } else if s_l.contains("timeout") {
-        TerminationBy::Timeout
+        TerminationReason::Timeout
     } else if s_l.contains("draw") {
-        TerminationBy::Draw
+        TerminationReason::Draw
     } else {
-        TerminationBy::Unknown
+        TerminationReason::Resignation
     }
 }
 
 fn set_tag(metadata: &mut BoardMetaData, tag: String, value: String) {
     let value = value.trim_matches('"').to_string();
     match tag.as_str() {
-        "Event" => metadata.event = Some(value),
-        "Site" => metadata.site = Some(value),
-        "Date" => metadata.date = value,
-        "Round" => metadata.round = Some(value),
-        "White" => metadata.white_player_name = value,
-        "Black" => metadata.black_player_name = value,
-        "Result" => metadata.result = GameResult::from(value.as_str()),
-        "WhiteElo" => metadata.white_player_elo = value.parse::<u32>().unwrap_or(1),
-        "BlackElo" => metadata.black_player_elo = value.parse::<u32>().unwrap_or(1),
-        "TimeControl" => metadata.time_control = Some(value),
-        "Termination" => metadata.termination = parse_termination(&value),
-        "ECO" => metadata.eco = Some(value),
-        "Opening" => metadata.opening = Some(value),
-        "EndTime" => metadata.end_time = Some(value),
-        "Link" => metadata.link = Some(value),
+        "Event" => {
+            metadata.event = Some(value.clone());
+            println!("Set Event: {}", value);
+        }
+        "Site" => {
+            metadata.site = Some(value.clone());
+            println!("Set Site: {}", value);
+        }
+        "Date" => {
+            metadata.date = value.clone();
+            println!("Set Date: {}", value);
+        }
+        "Round" => {
+            metadata.round = Some(value.clone());
+            println!("Set Round: {}", value);
+        }
+        "White" => {
+            metadata.white_player_name = value.clone();
+            println!("Set White: {}", value);
+        }
+        "Black" => {
+            metadata.black_player_name = value.clone();
+            println!("Set Black: {}", value);
+        }
+        "Result" => {
+            metadata.result = GameResult::from(value.as_str());
+            println!("Set Result: {}", value);
+        }
+        "WhiteElo" => {
+            metadata.white_player_elo = value.parse::<u32>().unwrap_or(1);
+            println!("Set WhiteElo: {}", value);
+        }
+        "BlackElo" => {
+            metadata.black_player_elo = value.parse::<u32>().unwrap_or(1);
+            println!("Set BlackElo: {}", value);
+        }
+        "TimeControl" => {
+            metadata.time_control = Some(value.clone());
+            println!("Set TimeControl: {}", value);
+        }
+        "Termination" => {
+            metadata.termination = parse_termination(&value);
+            println!("Set Termination: {}", value);
+        }
+        "ECO" => {
+            metadata.eco = Some(value.clone());
+            println!("Set ECO: {}", value);
+        }
+        "Opening" => {
+            metadata.opening = Some(value.clone());
+            println!("Set Opening: {}", value);
+        }
+        "EndTime" => {
+            metadata.end_time = Some(value.clone());
+            println!("Set EndTime: {}", value);
+        }
+        "Link" => {
+            metadata.link = Some(value.clone());
+            println!("Set Link: {}", value);
+        }
         _ => {}
     }
 }
@@ -289,7 +336,7 @@ fn parse_pgn_string(s: String) -> BoardMetaData {
                 clock: clocks.get(ct_c).cloned(),
             };
             ct_c += 1;
-            println!("{:?}", &move_struct);
+            //println!("{:?}", &move_struct);
             move_counter += 1;
             moves.push(move_struct);
             // If you want to collect them, push to moves vector
@@ -305,14 +352,13 @@ fn parse_pgn_string(s: String) -> BoardMetaData {
 
 use std::fmt::Write;
 
-fn termination_to_string(t: &TerminationBy) -> Option<&'static str> {
+fn termination_to_string(t: &TerminationReason) -> Option<&'static str> {
     match t {
-        TerminationBy::Checkmate => Some("checkmate"),
-        TerminationBy::StaleMate => Some("stalemate"),
-        TerminationBy::Resignation => Some("resignation"),
-        TerminationBy::Timeout => Some("timeout"),
-        TerminationBy::Draw => Some("draw"),
-        TerminationBy::Unknown => None,
+        TerminationReason::Checkmate => Some("checkmate"),
+        TerminationReason::StaleMate => Some("stalemate"),
+        TerminationReason::Resignation => Some("resignation"),
+        TerminationReason::Timeout => Some("timeout"),
+        TerminationReason::Draw => Some("draw"),
     }
 }
 
@@ -433,10 +479,16 @@ pub fn get_game(id: usize) -> BoardMetaData {
 
     parse_pgn_string(pgn)
 }
+pub enum SaveType {
+    MetaDataSave { data: BoardMetaData },
+    GameSave,
+}
 pub fn save_game(metadata: &BoardMetaData) -> Result<(), rusqlite::Error> {
     let con = Connection::open("chess.db")?;
 
-    let pgn_data = metadata_to_pgn(metadata);
+    let pgn_data = metadata_to_pgn(&metadata);
+    let time_control = metadata.time_control.clone().unwrap_or_default();
+    println!("Saving to time_control: '{}'", time_control);
 
     con.execute(
         "INSERT INTO games (
@@ -447,8 +499,9 @@ pub fn save_game(metadata: &BoardMetaData) -> Result<(), rusqlite::Error> {
             black_elo,
             result,
             opening,
-            pgn_data
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            pgn_data,
+            time_control
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
             metadata.date,
             metadata.white_player_name,
@@ -457,17 +510,19 @@ pub fn save_game(metadata: &BoardMetaData) -> Result<(), rusqlite::Error> {
             metadata.black_player_elo,
             metadata.result.to_string(),
             metadata.opening.clone().unwrap_or_default(),
-            pgn_data
+            pgn_data,
+            time_control
         ],
     )?;
 
     Ok(())
 }
+
 pub fn get_game_list() -> Result<Vec<BoardMetaData>, rusqlite::Error> {
     let con = Connection::open("chess.db")?;
 
     let mut stmt = con.prepare(
-        "SELECT game_id, date_played, white_player, black_player, result, opening, pgn_data, white_elo, black_elo
+        "SELECT game_id, date_played, white_player, black_player, result, opening, pgn_data, white_elo, black_elo, time_control
          FROM games",
     )?;
 
@@ -485,6 +540,7 @@ pub fn get_game_list() -> Result<Vec<BoardMetaData>, rusqlite::Error> {
         let result_str: String = row.get(4)?;
         meta.result = parse_game_result(&result_str);
         meta.opening = row.get::<_, Option<String>>(5)?;
+        meta.time_control = row.get::<_, Option<String>>(9)?;
         Ok(meta)
     })?;
 
@@ -497,7 +553,10 @@ pub fn get_game_list() -> Result<Vec<BoardMetaData>, rusqlite::Error> {
 #[tauri::command]
 pub fn load_pgn_game(input_string: String) -> Result<(), String> {
     let metadata = parse_pgn_string(input_string);
-    save_game(&metadata).map_err(|e| e.to_string())?;
+    if let Err(e) = save_game(&metadata) {
+        eprintln!("Error saving game: {}", e);
+        return Err(e.to_string());
+    }
     Ok(())
 }
 pub fn get_game_by_id(game_id: usize) -> Result<BoardMetaData, rusqlite::Error> {

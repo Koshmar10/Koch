@@ -37,14 +37,17 @@ interface ChessBoardProps {
     lastMove?: [number[], number[]] | null;
     flipped?: boolean;
     isInteractive?: boolean;
-    whiteClock?: string | number; // <- NEW
-    blackClock?: string | number; // <- NEW
+    whiteClock?: string; // <- NEW
+    blackPlayer?: string;
+    whitePlayer?: string;
+    blackClock?: string; // <- NEW
     suggestion?: ArrowData | null;
     threat?: ArrowData | null;
     tintEnabled?: boolean; // when true show influence tint; when true do not render last-move/selection highlights
     hoverTarget?: [number, number] | null;
     ghostPieces?: GhostPiece[];
     ghostArrows?: ArrowData[];
+    user?: PieceColor;
 }
 
 export function ChessBoard({
@@ -53,15 +56,18 @@ export function ChessBoard({
     onMove,
     lastMove,
     flipped = false,
-    isInteractive = false,
+    isInteractive = true,
     whiteClock,
     blackClock,
+    whitePlayer,
+    blackPlayer,
     suggestion = null,
     threat = null,
     tintEnabled = false,
     hoverTarget = null,
     ghostPieces = [],
     ghostArrows = [],
+    user,
 
 }: ChessBoardProps) {
 
@@ -142,9 +148,10 @@ export function ChessBoard({
     }
 
     const selectSquare = (r: number, c: number) => {
-        if (!isInteractive) return;
+        ///if (!isInteractive) return;
         const piece = board.squares[r][c];
         if (!piece) return;
+        if (user ? piece.color !== user : false) return;
         setSelectedSquare([r, c]);
         setSelectedMoves(board.move_cache[piece.id] || null);
     }
@@ -259,7 +266,7 @@ export function ChessBoard({
             if (piece_color !== board.turn) {
                 return;
             }
-
+            console.log(r, c);
             selectSquare(r, c)
         }
         if (e.button === 2) {
@@ -329,14 +336,18 @@ export function ChessBoard({
             <PlayerCard
                 display={true}
                 color={flipped ? "White" : "Black"}
-                player={flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name}
+                player={
+                    flipped
+                        ? (whitePlayer !== undefined ? whitePlayer : board.meta_data.white_player_name)
+                        : (blackPlayer !== undefined ? blackPlayer : board.meta_data.black_player_name)
+                }
                 isTurn={board.turn === (flipped ? "White" : "Black")}
                 rating={flipped ? board.meta_data.white_player_elo : board.meta_data.black_player_elo}
                 clock={flipped ? whiteClock : blackClock} // <- pass appropriate clock
             />
 
             <div className="relative inline-block" onContextMenu={handleContextMenu}>
-                <div className="absolute top-[-30px] left-0 ">{board.game_phase}</div>
+                {/* <div className="absolute top-[-30px] left-0 ">{board.game_phase}</div> */}
                 {/* Board squares */}
                 <div
                     className="grid relative z-0"
@@ -500,11 +511,20 @@ export function ChessBoard({
             <PlayerCard
                 display={true}
                 color={!flipped ? "White" : "Black"}
-                player={!flipped ? board.meta_data.white_player_name : board.meta_data.black_player_name}
+                player={
+                    !flipped
+                        ? (whitePlayer !== undefined ? whitePlayer : board.meta_data.white_player_name)
+                        : (blackPlayer !== undefined ? blackPlayer : board.meta_data.black_player_name)
+                }
                 isTurn={board.turn === (!flipped ? "White" : "Black")}
-                rating={!flipped ? board.meta_data.white_player_elo : board.meta_data.black_player_elo}
+                rating={
+                    !flipped
+                        ? board.meta_data.white_player_elo
+                        : board.meta_data.black_player_elo
+                }
                 clock={!flipped ? whiteClock : blackClock} // <- pass appropriate clock
             />
+
 
         </div >
     )

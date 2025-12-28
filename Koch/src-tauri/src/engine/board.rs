@@ -1,6 +1,7 @@
 use crate::{
     engine::{fen::fen_parser, move_gen::MoveError, ChessPiece, PieceColor, PieceType},
     etc::{DEFAULT_FEN, DEFAULT_STARTING},
+    game::controller::TerminationReason,
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -45,9 +46,7 @@ pub struct Board {
     pub fullmove_number: u32,
     pub en_passant_target: Option<(u8, u8)>,
     pub meta_data: BoardMetaData,
-    pub ui: BoardUi,
     pub move_cache: std::collections::HashMap<u32, PieceMoves>,
-    pub been_modified: bool,
     pub next_id: u32,
     pub game_phase: GamePhase,
     pub ply_count: u32,
@@ -133,7 +132,7 @@ pub struct BoardMetaData {
     pub starting_position: String,
     pub date: String,
     pub move_list: Vec<MoveStruct>,
-    pub termination: TerminationBy,
+    pub termination: TerminationReason,
     pub result: GameResult,
     pub white_player_elo: u32,
     pub black_player_elo: u32,
@@ -173,8 +172,6 @@ impl Default for Board {
                 halfmove_clock: 0,
                 fullmove_number: 1,
                 en_passant_target: None,
-                been_modified: true,
-                ui: BoardUi::default(),
                 meta_data: BoardMetaData::default(),
                 move_cache: std::collections::HashMap::new(),
                 game_phase: GamePhase::Opening,
@@ -199,7 +196,7 @@ impl Default for BoardMetaData {
             starting_position: DEFAULT_FEN.to_string(),
             date: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             move_list: Vec::new(),
-            termination: TerminationBy::Draw,
+            termination: TerminationReason::Draw,
             result: GameResult::Unfinished,
             white_player_elo: 0,
             black_player_elo: 0,
@@ -322,7 +319,9 @@ impl Board {
         if !is_capture && !is_quiet {
             return Err(MoveError::IllegalMove);
         }
-
+        let san = self
+            .compute_san_for_move(old_pos, new_pos, promotion, is_capture)
+            .unwrap_or_else(|_| String::new());
         if is_quiet
             && moving_piece.kind == PieceType::King
             && self.is_player_castle(old_pos, new_pos)
@@ -345,12 +344,10 @@ impl Board {
                 self.fullmove_number = self.fullmove_number.saturating_add(1);
             }
 
-            self.been_modified = true;
-
             let mv = MoveStruct {
                 move_number: self.ply_count,
                 uci: self.encode_uci_move(old_pos, new_pos, promotion), // e1g1/e1c1/e8g8/e8c8
-                san: String::new(),
+                san: san,
                 promotion: None,
                 is_capture: false,
                 annotation: None,
@@ -486,12 +483,11 @@ impl Board {
             self.fullmove_number = self.fullmove_number.saturating_add(1);
         }
 
-        self.been_modified = true;
         self.update_gamephase();
         Ok(MoveStruct {
             move_number: self.ply_count,
             uci: self.encode_uci_move(old_pos, new_pos, promotion_applied),
-            san: String::new(),
+            san: san,
             promotion: promotion_applied,
             is_capture,
             annotation: None,
@@ -556,19 +552,15 @@ impl Board {
         matches!(uci, "e1g1" | "e1c1" | "e8g8" | "e8c8")
     }
     pub fn execute_player_castle(&mut self, from: (u8, u8), to: (u8, u8)) {
-        
         match (from, to) {
             // King-side castle
             ((r, 4), (rr, 6)) if r == rr => {
-                
                 // Move king
                 if let Some(mut king) = self.squares[r as usize][4].take() {
-                    
                     king.position = (r, 6);
                     king.has_moved = true;
                     self.squares[r as usize][6] = Some(king);
                 } else {
-                    
                 }
 
                 // Move rook from h-file to f-file
@@ -581,7 +573,6 @@ impl Board {
                     rook.has_moved = true;
                     self.squares[r as usize][5] = Some(rook);
                 } else {
-                   
                 }
 
                 // Update castling rights
@@ -592,33 +583,24 @@ impl Board {
                     self.black_small_castle = false;
                     self.black_big_castle = false;
                 }
-
-                
-
-                self.been_modified = true;
             }
 
             // Queen-side castle
             ((r, 4), (rr, 2)) if r == rr => {
-               
                 // Move king
                 if let Some(mut king) = self.squares[r as usize][4].take() {
-                    
                     king.position = (r, 2);
                     king.has_moved = true;
                     self.squares[r as usize][2] = Some(king);
                 } else {
-                    
                 }
 
                 // Move rook from a-file to d-file
                 if let Some(mut rook) = self.squares[r as usize][0].take() {
-                    
                     rook.position = (r, 3);
                     rook.has_moved = true;
                     self.squares[r as usize][3] = Some(rook);
                 } else {
-                    
                 }
 
                 // Update castling rights
@@ -629,105 +611,76 @@ impl Board {
                     self.black_small_castle = false;
                     self.black_big_castle = false;
                 }
-
-                
-
-                self.been_modified = true;
             }
 
-            _ => {
-                
-            }
+            _ => {}
         }
     }
 
     pub fn execute_engine_castle(&mut self, uci: &str) {
-        
         match uci {
             // White king-side: e1g1
             "e1g1" => {
-                
                 // Move king
                 if let Some(mut king) = self.squares[7][4].take() {
-                   
                     king.position = (7, 6);
                     king.has_moved = true;
                     self.squares[7][6] = Some(king);
                 } else {
-                    
                 }
                 // Move rook h1 -> f1
                 if let Some(mut rook) = self.squares[7][7].take() {
-                    
                     rook.position = (7, 5);
                     rook.has_moved = true;
                     self.squares[7][5] = Some(rook);
                 } else {
-                    
                 }
                 self.white_small_castle = false;
                 self.white_big_castle = false;
-               
-                self.been_modified = true;
             }
             // White queen-side: e1c1
             "e1c1" => {
-               
                 // Move king
                 if let Some(mut king) = self.squares[7][4].take() {
-                    
                     king.position = (7, 2);
                     king.has_moved = true;
                     self.squares[7][2] = Some(king);
                 } else {
-                    
                 }
                 // Move rook a1 -> d1
                 if let Some(mut rook) = self.squares[7][0].take() {
-                    
                     rook.position = (7, 3);
                     rook.has_moved = true;
                     self.squares[7][3] = Some(rook);
                 } else {
-                    println!("[DEBUG][execute_engine_castle] WARNING: no white rook at 7,0");
                 }
                 self.white_small_castle = false;
                 self.white_big_castle = false;
-                
-                self.been_modified = true;
             }
             // Black king-side: e8g8
             "e8g8" => {
-                println!("[DEBUG][execute_engine_castle] Black king-side");
                 // Move king
                 if let Some(mut king) = self.squares[0][4].take() {
-                    
                     king.position = (0, 6);
                     king.has_moved = true;
                     self.squares[0][6] = Some(king);
                 } else {
-                    println!("[DEBUG][execute_engine_castle] WARNING: no black king at 0,4");
                 }
                 // Move rook h8 -> f8
                 if let Some(mut rook) = self.squares[0][7].take() {
-                   
                     rook.position = (0, 5);
                     rook.has_moved = true;
                     self.squares[0][5] = Some(rook);
                 } else {
-                    println!("[DEBUG][execute_engine_castle] WARNING: no black rook at 0,7");
                 }
                 self.black_small_castle = false;
                 self.black_big_castle = false;
-                
-                self.been_modified = true;
             }
             // Black queen-side: e8c8
             "e8c8" => {
                 println!("[DEBUG][execute_engine_castle] Black queen-side");
                 // Move king
                 if let Some(mut king) = self.squares[0][4].take() {
-                    
                     king.position = (0, 2);
                     king.has_moved = true;
                     self.squares[0][2] = Some(king);
@@ -736,7 +689,6 @@ impl Board {
                 }
                 // Move rook a8 -> d8
                 if let Some(mut rook) = self.squares[0][0].take() {
-                   
                     rook.position = (0, 3);
                     rook.has_moved = true;
                     self.squares[0][3] = Some(rook);
@@ -745,8 +697,6 @@ impl Board {
                 }
                 self.black_small_castle = false;
                 self.black_big_castle = false;
-               
-                self.been_modified = true;
             }
             _ => {
                 println!(
@@ -905,27 +855,21 @@ impl Board {
         self.rerender_move_cache();
         // Check if san is castle:
         if san == "O-O" {
-            println!("[DEBUG] Detected kingside castle SAN: {}", san);
             match self.turn {
                 PieceColor::Black => {
-                    println!("[DEBUG] Black to move: returning e8g8");
                     return Ok("e8g8".to_string()); // kingside castle move for black
                 }
                 PieceColor::White => {
-                    println!("[DEBUG] White to move: returning e1g1");
                     return Ok("e1g1".to_string()); // kingside castle move for white
                 }
             }
         }
         if san == "O-O-O" {
-            println!("[DEBUG] Detected queenside castle SAN: {}", san);
             match self.turn {
                 PieceColor::Black => {
-                    println!("[DEBUG] Black to move: returning e8c8");
                     return Ok("e8c8".to_string()); // queenside castle move for black
                 }
                 PieceColor::White => {
-                    println!("[DEBUG] White to move: returning e1c1");
                     return Ok("e1c1".to_string()); // queenside castle move for white
                 }
             }
@@ -936,16 +880,11 @@ impl Board {
         // Remove trailing characters
         let mut normalized_san = Self::normalize_san_token(san);
 
-        println!("[DEBUG] Normalized SAN: {}", normalized_san);
-
         if let Ok(res) = Self::consume_promotion(normalized_san) {
             (normalized_san, promotion) = res;
-            println!("[DEBUG] Promotion detected: {:?}", promotion);
         } else {
-            println!("[DEBUG] Promotion parsing failed, illegal move");
             return Err(MoveError::IllegalMove);
         }
-        println!("[DEBUG] Final normalized SAN: {}", &normalized_san);
 
         // Transform normalized san into a vec
         // This means is a simple pawn move
@@ -955,17 +894,12 @@ impl Board {
         if is_capture {
             san_chars.retain(|c| c != &'x');
         }
-        println!("[DEBUG] Final normalized SAN chars : {:?}", &san_chars);
 
         // ---------- FIX: build dest from cleaned san_chars (not from normalized_san) ----------
         if san_chars.len() == 2 {
             // parse file and rank from cleaned chars (e.g. ['e','4'])
             let dest_str: String = san_chars.iter().collect();
             let dest = Self::sq_to_coord(&dest_str).map_err(|_e| MoveError::IllegalMove)?;
-            println!(
-                "[DEBUG] Pawn move destination: {:?} (from '{}')",
-                dest, dest_str
-            );
 
             // find a pawn of the side to move that has dest in its quiet or capture moves
             for i in 0..8u8 {
@@ -976,10 +910,6 @@ impl Board {
                                 if pms.quiet_moves.contains(&dest)
                                     || pms.capture_moves.contains(&dest)
                                 {
-                                    println!(
-                                        "[DEBUG] Found pawn at ({}, {}) with legal move to {:?}",
-                                        i, j, dest
-                                    );
                                     return Ok(self.encode_uci_move((i, j), dest, promotion));
                                 }
                             }
@@ -987,16 +917,12 @@ impl Board {
                     }
                 }
             }
-            println!("[DEBUG] No legal pawn move found for SAN: {}", san);
         }
         if san_chars.len() == 3 {
             // e.g. "exd5" cleaned -> ['e','d','5'] where [1..3] is dest
             let dest_str: String = san_chars[1..3].iter().collect();
             let dest = Self::sq_to_coord(&dest_str).map_err(|_e| MoveError::IllegalMove)?;
-            println!(
-                "[DEBUG] Pawn/short-move destination: {:?} (from '{}')",
-                dest, dest_str
-            );
+
             let pawn_move = "abcdefgh".contains(san_chars[0]);
             for i in 0..8u8 {
                 for j in 0..8u8 {
@@ -1026,10 +952,6 @@ impl Board {
                                 if let Some(pms) = self.move_cache.get(&piece.id) {
                                     if is_capture {
                                         if pms.capture_moves.contains(&dest) {
-                                            println!(
-                                            "[DEBUG] Found pawn at ({}, {}) with legal capture move to {:?}",
-                                            i, j, dest
-                                        );
                                             return Ok(self.encode_uci_move(
                                                 (i, j),
                                                 dest,
@@ -1038,10 +960,6 @@ impl Board {
                                         }
                                     } else {
                                         if pms.quiet_moves.contains(&dest) {
-                                            println!(
-                                            "[DEBUG] Found pawn at ({}, {}) with legal quiet move to {:?}",
-                                            i, j, dest
-                                        );
                                             return Ok(self.encode_uci_move(
                                                 (i, j),
                                                 dest,
@@ -1059,18 +977,10 @@ impl Board {
                             if let Some(pms) = self.move_cache.get(&piece.id) {
                                 if is_capture {
                                     if pms.capture_moves.contains(&dest) {
-                                        println!(
-                                            "[DEBUG] Found {:?} at ({}, {}) with legal capture move to {:?}",
-                                            kind, i, j, dest
-                                        );
                                         return Ok(self.encode_uci_move((i, j), dest, promotion));
                                     }
                                 } else {
                                     if pms.quiet_moves.contains(&dest) {
-                                        println!(
-                                            "[DEBUG] Found {:?} at ({}, {}) with legal quiet move to {:?}",
-                                            kind, i, j, dest
-                                        );
                                         return Ok(self.encode_uci_move((i, j), dest, promotion));
                                     }
                                 }
@@ -1132,22 +1042,14 @@ impl Board {
                             (check_file && check_file_value == j as i8)
                                 || (check_rank && check_rank_value == i as i8)
                         };
-                        if condition && piece.kind == kind{
+                        if condition && piece.kind == kind {
                             if let Some(pms) = self.move_cache.get(&piece.id) {
                                 if is_capture {
                                     if pms.capture_moves.contains(&dest) {
-                                        println!(
-                                            "[DEBUG] Found pawn at ({}, {}) with legal capture move to {:?}",
-                                            i, j, dest
-                                        );
                                         return Ok(self.encode_uci_move((i, j), dest, promotion));
                                     }
                                 } else {
                                     if pms.quiet_moves.contains(&dest) {
-                                        println!(
-                                            "[DEBUG] Found pawn at ({}, {}) with legal quiet move to {:?}",
-                                            i, j, dest
-                                        );
                                         return Ok(self.encode_uci_move((i, j), dest, promotion));
                                     }
                                 }
@@ -1160,7 +1062,7 @@ impl Board {
         }
 
         //if function still has not returned this means that the move involves either a pawn capture or a piece move
-        println!("[DEBUG] Move is illegal for SAN: {}", san);
+
         Err(MoveError::IllegalMove)
     }
 
@@ -1202,4 +1104,176 @@ impl Board {
         }
         Ok((san, None))
     }
+
+    /// Convert board coords (row,col) to algebraic square "e4"
+    fn coord_to_sq(pos: (u8, u8)) -> String {
+        let file = (b'a' + pos.1) as char;
+        let rank = (8 - pos.0).to_string();
+        format!("{}{}", file, rank)
+    }
+
+    /// Piece letter for SAN (pawn = "")
+    fn piece_letter(kind: &PieceType) -> &'static str {
+        match kind {
+            PieceType::King => "K",
+            PieceType::Queen => "Q",
+            PieceType::Rook => "R",
+            PieceType::Bishop => "B",
+            PieceType::Knight => "N",
+            PieceType::Pawn => "",
+        }
+    }
+
+    /// Compute SAN for a move.
+    /// - `from` and `to` are board coordinates in (row, col) (0..7)
+    /// - `promotion` is optional promotion piece kind
+    /// - `is_capture` indicates whether this move captures a piece (including en-passant)
+    ///
+    /// Note: call this on the board state BEFORE applying the move (so `self` represents the pre-move board).
+    pub fn compute_san_for_move(
+        &self,
+        from: (u8, u8),
+        to: (u8, u8),
+        promotion: Option<PieceType>,
+        is_capture: bool,
+    ) -> Result<String, MoveError> {
+        // validate moving piece exists
+        let moving = self.squares[from.0 as usize][from.1 as usize]
+            .as_ref()
+            .ok_or(MoveError::IllegalMove)?;
+
+        // Castling
+        if moving.kind == PieceType::King {
+            // King-side castle (move two files right)
+            if from.1 + 2 == to.1 {
+                return Ok("O-O".to_string());
+            }
+            // Queen-side castle (move two files left)
+            if from.1 == 4 && to.1 == 2 {
+                return Ok("O-O-O".to_string());
+            }
+        }
+
+        let dest_sq = Self::coord_to_sq(to);
+        // Pawn moves
+        if moving.kind == PieceType::Pawn {
+            let origin_file = (b'a' + from.1) as char;
+            let mut san = String::new();
+            if is_capture {
+                // exd5 style
+                san.push(origin_file);
+                san.push('x');
+                san.push_str(&dest_sq);
+            } else {
+                // e4 style
+                san.push_str(&dest_sq);
+            }
+            // promotion
+            if let Some(prom) = promotion {
+                san.push('=');
+                san.push_str(match prom {
+                    PieceType::Queen => "Q",
+                    PieceType::Rook => "R",
+                    PieceType::Bishop => "B",
+                    PieceType::Knight => "N",
+                    _ => "Q",
+                });
+            }
+            return Ok(san);
+        }
+
+        // Piece moves (N, B, R, Q, K)
+        let piece_letter = Self::piece_letter(&moving.kind);
+        // Find other pieces of same kind & color that can also move to `to`
+        let mut ambiguous_positions: Vec<(u8, u8)> = Vec::new();
+        for r in 0..8u8 {
+            for c in 0..8u8 {
+                if r == from.0 && c == from.1 {
+                    continue;
+                }
+                if let Some(piece) = &self.squares[r as usize][c as usize] {
+                    if piece.kind == moving.kind && piece.color == moving.color {
+                        // check move_cache: if this piece can move to `to`, it's ambiguous
+                        if let Some(pms) = self.move_cache.get(&piece.id) {
+                            if pms.quiet_moves.contains(&to) || pms.capture_moves.contains(&to) {
+                                ambiguous_positions.push((r, c));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // determine disambiguation
+        let mut disamb = String::new();
+        if !ambiguous_positions.is_empty() {
+            // if any ambiguous piece shares the same file as 'from', include rank; otherwise include file
+            let same_file_exists = ambiguous_positions.iter().any(|&(r, c)| c == from.1);
+            if same_file_exists {
+                // include rank (numeric) of origin
+                let rank_char = (8 - from.0).to_string();
+                disamb.push_str(&rank_char);
+            } else {
+                // include file letter of origin
+                let file_char = (b'a' + from.1) as char;
+                disamb.push(file_char);
+            }
+
+            // If still ambiguous (rare), include both file+rank
+            // check if disamb chosen is unique; if not, fallback to file+rank
+            let test = format!("{}{}", piece_letter, disamb);
+            let mut matches = 0;
+            for &(r, c) in ambiguous_positions.iter() {
+                let mut candidate = String::new();
+                if moving.kind != PieceType::Pawn {
+                    candidate.push_str(Self::piece_letter(&moving.kind));
+                }
+                let file_c = (b'a' + c) as char;
+                let rank_c = (8 - r).to_string();
+                candidate.push_str(&format!("{}{}", file_c, rank_c));
+                if candidate.contains(&to_cow_string(&dest_sq)) {
+                    matches += 1;
+                }
+            }
+            // If matches still > 0 (ambiguous), force full disambiguation file+rank
+            // (Simpler approach: always include both file+rank if more than one ambiguous piece exists that would not be disambiguated by single char)
+            if ambiguous_positions.len() > 1 && disamb.len() == 1 {
+                // include both file and rank
+                let file_char = (b'a' + from.1) as char;
+                let rank_char = (8 - from.0).to_string();
+                disamb = format!("{}{}", file_char, rank_char);
+            }
+        }
+
+        // capture marker
+        let capture_mark = if is_capture { "x" } else { "" };
+
+        // promotion for non-pawn (rare) keep empty
+        let promotion_suffix = if let Some(prom) = promotion {
+            format!(
+                "={}",
+                match prom {
+                    PieceType::Queen => "Q",
+                    PieceType::Rook => "R",
+                    PieceType::Bishop => "B",
+                    PieceType::Knight => "N",
+                    _ => "Q",
+                }
+            )
+        } else {
+            String::new()
+        };
+
+        let san = format!(
+            "{}{}{}{}{}",
+            piece_letter, disamb, capture_mark, dest_sq, promotion_suffix
+        );
+
+        Ok(san)
+    }
+}
+
+// helper to satisfy small test above when checking match; convert &str to owned String
+fn to_cow_string(s: &str) -> String {
+    s.to_string()
 }

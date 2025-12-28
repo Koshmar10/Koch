@@ -161,12 +161,12 @@ impl Board {
         // Housekeeping
         self.next_id = next_id;
         self.move_cache.clear();
-        self.been_modified = true;
         self.ply_count = 0;
 
         // Optionally update meta data/UI
         self.meta_data = BoardMetaData::default();
         self.meta_data.starting_position = fen;
+        self.rerender_move_cache();
         //self.ui = BoardUi::default();
     }
 }
@@ -266,10 +266,8 @@ pub fn fen_parser(fen: &String) -> Result<Board, FenError> {
         halfmove_clock,
         fullmove_number,
         en_passant_target: en_passant_target,
-        ui: BoardUi::default(),
         meta_data: BoardMetaData::default(),
         move_cache: std::collections::HashMap::new(),
-        been_modified: true,
         next_id,
         ply_count: 0,
         game_phase: super::board::GamePhase::Opening,

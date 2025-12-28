@@ -65,7 +65,8 @@ impl Board {
             // Also detect promotion implicitly for pawns moving to last rank (in case UCI omitted promotion piece)
             if let Some(piece) = &self.squares[from_rank as usize][from_file as usize] {
                 if piece.kind == crate::engine::PieceType::Pawn {
-                    let is_promotion = (piece.color == crate::engine::PieceColor::White && to_rank == 0)
+                    let is_promotion = (piece.color == crate::engine::PieceColor::White
+                        && to_rank == 0)
                         || (piece.color == crate::engine::PieceColor::Black && to_rank == 7);
                     if is_promotion {
                         promotion = Some(crate::engine::PieceType::Queen); // default to queen

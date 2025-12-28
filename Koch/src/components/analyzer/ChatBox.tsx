@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { Bot, Pin } from "lucide-react";
 import { mockMessages } from "../mock";
 import { useRef, useState, useEffect } from "react";
 
@@ -37,11 +37,10 @@ export const MessageText = ({
     fetchIndex,
     allow_hover,
 }: MessageTextProps) => {
-    // match <mv>...</mv>, <sq>...</sq> and **bold**
     const parts = text.split(/(<mv>.*?<\/mv>|<sq>.*?<\/sq>|\*\*.*?\*\*)/g);
     return (
         <div>
-            <p className="text-[0.8rem]">
+            <p className="text-[0.8rem] text-foreground-dark/60">
                 {parts.map((part, i) => {
                     if (!part) return null;
                     if (part.startsWith('<mv>') && part.endsWith('</mv>')) {
@@ -49,7 +48,7 @@ export const MessageText = ({
                         return (
                             <code
                                 key={i}
-                                className="font-mono bg-black/40 px-1 rounded hover:cursor-pointer"
+                                className="font-mono bg-popover-dark/50 px-1 rounded hover:cursor-pointer text-foreground-dark"
                                 onMouseEnter={() => allow_hover && onMoveEnter(inner.replace("...", ""))}
                                 onMouseLeave={() => allow_hover && onMoveLeave()}
                             >
@@ -62,7 +61,7 @@ export const MessageText = ({
                         return (
                             <span
                                 key={i}
-                                className="bg-accent/30 px-1 rounded font-semibold text-[1.0rem] hover:cursor-pointer"
+                                className="bg-accent-dark/30 px-1 rounded font-semibold text-[1.0rem] hover:cursor-pointer text-accent-dark-foreground"
                                 onMouseEnter={() => allow_hover && onSquareEnter(inner)}
                                 onMouseLeave={() => allow_hover && onSquareLeave()}
                             >
@@ -73,25 +72,14 @@ export const MessageText = ({
                     if (part.startsWith('**') && part.endsWith('**')) {
                         const inner = part.slice(2, -2);
                         return (
-                            <strong key={i} className="font-bold text-white/90">
+                            <strong key={i} className="font-bold text-foreground-dark">
                                 {inner}
                             </strong>
                         );
                     }
-                    return <span className="text-white/80" key={i}>{part}</span>;
+                    return <span className="text-foreground-dark/80" key={i}>{part}</span>;
                 })}
             </p>
-            {fetchIndex && (
-                <span
-                    className="hover:bg-primary/90 hover:cursor-pointer"
-                    onClick={(e) => {
-                        e.preventDefault();
-                        fetchIndex(mv_index);
-                    }}
-                >
-                    Sync Board
-                </span>
-            )}
         </div>
     );
 };
@@ -103,8 +91,8 @@ export function ChatBox({
     thinking,
     handleOnSquareHover,
     handleOnSquareHoverLost,
-    handleOnMoveHover, // New prop
-    handleOnMoveHoverLost, // New prop
+    handleOnMoveHover,
+    handleOnMoveHoverLost,
     fetchIndex,
 }: Props) {
     const [prompt, setPrompt] = useState<string>("");
@@ -118,66 +106,79 @@ export function ChatBox({
 
     return (
         <div
-            className={`chat-box flex flex-col bg-primary/20 border-l border-accent/80 transition-all duration-300 ease-in-out ${toggleChat ? "w-0" : "w-[55%]"
+            className={`chat-box flex flex-col bg-card-dark/20 border-l border-border-dark/80 transition-all duration-300 ease-in-out ${toggleChat ? "w-0" : "w-[55%]"
                 }`}
         >
             {/* HEADER */}
             <div className="flex flex-row items-center gap-3 px-4 h-14 shrink-0">
-                <div className="text-white/20 bg-primary/80 p-1 rounded-full flex justify-center items-center">
-                    <Bot className="w-9 h-8" />
+                <div className="text-foreground-dark bg-primary-dark/80 p-2 rounded-full flex justify-center items-center">
+                    <Bot size={20} />
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-md">Koch AI</span>
-                    <span className="text-xs text-secondary/90">Online</span>
+                    <span className="text-md font-medium text-foreground-dark">Koch AI</span>
+                    <span className="text-xs text-secondary-dark/90">Online</span>
                 </div>
             </div>
 
-            {/* MESSAGES (flex-grow, scrollable) */}
-            <div className="w-full h-[80%] border-y border-accent/80 flex-1 flex flex-col ">
+            {/* MESSAGES */}
+            <div className="w-full h-[80%] border-y-2 border-border-dark/80 flex-1 flex flex-col">
                 <div className="flex-1 overflow-y-scroll flex flex-col gap-4 px-3 py-2" ref={messagesContainerRef}>
                     {[
                         ...(thinking
                             ? [
                                 ...chatHistory,
-                                { id: "thinking", role: "Assistent", sent_at: "", text: "thinking...", move_index: -1, allow_hover: false },
+                                { id: "thinking", role: "Assistant", sent_at: "", text: "thinking...", move_index: -1, allow_hover: true },
                             ]
                             : chatHistory),
                     ].map((msg) => (
                         <div
                             key={msg.id}
                             className={`animate-message ${msg.role === "User" ? "self-end " : "self-start "
-                                } w-[80%] flex flex-col p-3 rounded-lg gap-2 ${msg.allow_hover ? 'bg-primary/90' : 'bg-primary/20'}`}
+                                } w-[80%] flex flex-col p-3 rounded-lg gap-2 ${msg.allow_hover ? 'bg-primary-dark/40' : 'bg-primary-dark/15'}`}
                         >
-                            <div className={`flex ${msg.role === "User" ? "flex-row" : "flex-row-reverse"} justify-between text-xs`}>
-                                <span>{msg.role}</span>
-                                <span>{msg.sent_at}</span>
+                            <div className={`flex ${msg.role === "User" ? "flex-row" : "flex-row-reverse"} justify-between text-xs items-center`}>
+                                <div className="flex flex-row gap-2 items-center">
+                                    {fetchIndex && msg.role === "User" && (
+                                        <span
+                                            className="hover:bg-accent-dark/30 rounded-full p-1 transition-colors cursor-pointer"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                fetchIndex(msg.move_index);
+                                            }}
+                                        >
+                                            <Pin size={15} className="text-foreground-dark/90 group-hover:text-accent-dark transition-colors" />
+                                        </span>
+                                    )}
+                                    <span className="text-foreground-dark font-medium">{msg.role}</span>
+                                </div>
+                                <span className="text-muted/70">{msg.sent_at}</span>
                             </div>
                             <MessageText
                                 text={msg.text}
                                 allow_hover={msg.allow_hover}
                                 onSquareEnter={handleOnSquareHover}
                                 onSquareLeave={handleOnSquareHoverLost}
-                                onMoveEnter={handleOnMoveHover} // Pass handleOnMoveHover
-                                onMoveLeave={handleOnMoveHoverLost} // Pass handleOnMoveHoverLost
+                                onMoveEnter={handleOnMoveHover}
+                                onMoveLeave={handleOnMoveHoverLost}
                                 mv_index={msg.move_index}
-                                fetchIndex={msg.role == "User" ? fetchIndex : undefined}
+                                fetchIndex={msg.role === "User" ? fetchIndex : undefined}
                             />
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* INPUT (fixed height, stays visible) */}
-            <div className="flex flex-row items-center gap-2 px-3 h-[10%] shrink-0">
+            {/* INPUT */}
+            <div className="flex flex-row items-center gap-2 px-3 h-fit py-7 shrink-0">
                 <input
                     type="text"
-                    className="flex-1 bg-primary/60 text-secondary text-sm px-3 py-2 rounded outline-none focus:ring-1 focus:ring-accent placeholder:text-secondary/60"
+                    className="flex-1 bg-input-dark text-foreground-dark text-sm px-3 py-2 rounded outline-none focus:ring-1 focus:ring-ring-dark placeholder:text-muted-dark/60"
                     placeholder="Type message..."
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                 />
                 <button
-                    className="px-4 py-2 bg-accent/80 rounded text-sm hover:bg-accent transition-colors"
+                    className="px-4 py-2 bg-accent-dark/80 rounded text-sm text-foreground-dark hover:bg-accent-dark transition-colors"
                     onClick={(e) => {
                         e.preventDefault();
                         if (prompt) {

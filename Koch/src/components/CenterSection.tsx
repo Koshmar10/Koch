@@ -1,10 +1,11 @@
 import { AppScreen } from "../App";
-import { Home } from "./Home";
-import { Pve } from "./Pve";
+import { Home } from "./home/Home";
+import { Pve } from "./pve/Pve";
 import { Analyzer } from "./analyzer/Analyzer";
 import { History } from "./history/History";
 import { Dispatch, SetStateAction } from "react";
 import { SettingsPanel } from "./SettingsPanel";
+import { PuzzlePannel } from "./PuzzlePannel";
 
 interface CenterSectionProps {
     selectedScreen: AppScreen;
@@ -26,6 +27,8 @@ export function CenterSection({ selectedScreen, selectedGameId, openGameInAnalyz
             return <History onOpenGame={openGameInAnalyzer} />
         case "Settings":
             return <SettingsPanel />
+        case "Puzzle":
+            return <PuzzlePannel />
         default:
             return <Home />
     }

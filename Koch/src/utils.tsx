@@ -280,3 +280,5 @@ export function fileRankToRowCol(square: string): [number, number] {
     }
     return [row, col];
 }
+
+

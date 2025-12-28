@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
+import { Dispatch, KeyboardEvent, SetStateAction, useEffect, useRef, useState } from "react";
 
 import { Bot, ChevronDown, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, ChevronUp, Download, FileText, Flame, GitBranch, Layers, Lightbulb, LoaderCircle, MessageSquareText, Target, Upload } from "lucide-react";
 
@@ -26,6 +26,7 @@ import { GameSelectPopup } from "./GameSelectPopup";
 import { AiChatMessage } from "../../../src-tauri/bindings/AiChatMessage";
 import { AiChatMessageRole } from "../../../src-tauri/bindings/AiChatMessageRole";
 import { LocalMessage } from "../../../src-tauri/bindings/LocalMessage";
+import { TopBarButton } from "./TopBarButton";
 
 export type UiAiChatMessage = {
     id: number,
@@ -250,6 +251,11 @@ export function Analyzer({ gameId, setSelectedGameId }: AnalyzerProps) {
                     allow_hover: msg.move_index === newController.current_ply, // Allow hover only if move_index matches current move
                 }))
             );
+            if (newController.current_ply % 2 == 0) {
+                setWhiteClock(newController.board.meta_data.move_list[newController.current_ply].clock)
+            } else {
+                setBlackClock(newController.board.meta_data.move_list[newController.current_ply].clock)
+            }
             //console.log(newController.board.move_cache);
             // kick analyzer eval / threat as fire-and-forget (do not block UI)
 
@@ -563,6 +569,29 @@ export function Analyzer({ gameId, setSelectedGameId }: AnalyzerProps) {
             }
         };
     }, []);
+    useEffect(() => {
+        const handleKeyDown = (e: WindowEventMap['keydown']) => {
+            if (e.shiftKey && e.key === "ArrowLeft") {
+                handleFirstMove();
+            }
+            else if (e.shiftKey && e.key === "ArrowRight") {
+                handleLastMove();
+            }
+            else if (e.key === "ArrowLeft") {
+                console.log("left");
+                handleMoveStep(-1)
+            }
+            else if (e.key === "ArrowRight") {
+                console.log("right");
+                handleMoveStep(1)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [analyzerContoller])
     return (
 
 
@@ -572,39 +601,27 @@ export function Analyzer({ gameId, setSelectedGameId }: AnalyzerProps) {
             <AnalyzerSettings analyzer={analyzerContoller} setEngineLoading={setEngineLoading} startEngine={startEngine} openGameSelectPopup={openGameSelectPopup} />
             <div className="w-full flex flex-col relative">
                 <GameSelectPopup isRendered={gameSelectPopupOpen} closePopup={setGameSelectPopupOpen} setSelectedGameId={setSelectedGameId} />
-                <div className="flex flex-row-reverse text-secondary h-20 w-full px-6 items-center">
-                    <div className="h-fit w-fit bg-primary/30 rounded-lg py-3 px-6 flex flex-row gap-3 items-center">
-                        <button
-                            className="transition-colors hover:bg-primary/50 rounded-full p-1 border border-transparent p-2"
-                            title="Download"
-                            onClick={() => { /* TODO: download action */ }}
-                        >
-                            <Upload size={18} />
-                        </button>
-                        <button
-                            className="transition-colors hover:bg-primary/50 rounded-full p-1 border border-transparent p-2"
-                            title="Upload"
+                <div className="flex flex-row-reverse text-foreground-dark h-20 w-full px-6 items-center">
+                    <div className="h-fit w-fit bg-card-dark/80 rounded-lg py-3 px-4 flex flex-row gap-3 items-center border-[1px] border-border-dark">
+
+                        <TopBarButton
+                            icon={<Download size={18} />}
+                            tooltip="Export Game"
                             onClick={() => { /* TODO: upload action */ }}
-                        >
-                            <Download size={18} />
-                        </button>
-                        <button
-                            className="transition-colors hover:bg-primary/50 rounded-full p-1 border border-transparent p-2"
-                            title="Document"
+                        />
+                        <TopBarButton
+                            icon={<FileText size={18} />}
+                            tooltip="Game Raport"
                             onClick={() => { /* TODO: document action */ }}
-                        >
-                            <FileText size={18} />
-                        </button>
-                        <button
-                            className={`transition-colors hover:bg-primary/50 rounded-full p-1 border border-transparent p-2 ${!toggleChat ? "bg-red-900/30" : ""}`}
-                            title="Chat"
-                            onClick={(e) => {
-                                e.preventDefault();
+                        />
+                        <TopBarButton
+                            icon={<MessageSquareText size={18} />}
+                            tooltip="Toggle Chat"
+                            active={!toggleChat}
+                            onClick={() => {
                                 setToggleChat(!toggleChat);
                             }}
-                        >
-                            <MessageSquareText size={18} />
-                        </button>
+                        />
                     </div>
                 </div>
                 <div className="board-section flex flex-1 justify-center items-center">

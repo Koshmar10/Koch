@@ -6,15 +6,16 @@ use ts_rs::TS;
 use crate::analyzer::analyzer::{AnalyzerController, UndoInfo};
 use crate::engine::board::{GamePhase, GameResult, TerminationBy};
 use crate::engine::{Board, PieceColor};
+use crate::game::controller::TerminationReason;
 
 // 1. Define the compressed metadata structure
-#[derive(Debug, TS, Serialize, Deserialize)]
+#[derive(Clone, Debug, TS, Serialize, Deserialize)]
 #[ts(export)]
 pub struct SerializedBoardMetaData {
     pub starting_position: String,
     pub date: String,
     pub move_list: String, // Compressed: "e2e4 e7e5 ..."
-    pub termination: TerminationBy,
+    pub termination: TerminationReason,
     pub result: GameResult,
     pub white_player_elo: u32,
     pub black_player_elo: u32,
@@ -30,7 +31,7 @@ pub struct SerializedBoardMetaData {
     pub eco: Option<String>,
 }
 
-#[derive(Debug, TS, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SerializedBoard {
     pub fen: String,

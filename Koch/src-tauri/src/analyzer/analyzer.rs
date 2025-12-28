@@ -593,7 +593,7 @@ pub fn start_analyzer_thread(
 
     (cmd_tx, pv_rx)
 }
-
+/*
 #[tauri::command]
 pub fn try_analyzer_move(
     state: tauri::State<'_, Mutex<ServerState>>,
@@ -617,22 +617,6 @@ pub fn try_analyzer_move(
         .move_piece(src_square, dest_square, promotion)
     {
         Ok(mut mv) => {
-            if mv.is_capture {
-                if let Some(captured_piece) = captured_before {
-                    match captured_piece.color {
-                        PieceColor::Black => state
-                            .board
-                            .ui
-                            .white_taken
-                            .push((captured_piece.kind, captured_piece.color)),
-                        PieceColor::White => state
-                            .board
-                            .ui
-                            .black_taken
-                            .push((captured_piece.kind, captured_piece.color)),
-                    }
-                }
-            }
 
             mv.uci =
                 state
@@ -659,6 +643,7 @@ pub fn try_analyzer_move(
     }
     None
 }
+ */
 #[tauri::command]
 pub fn set_analyzer_fen(state: tauri::State<'_, Mutex<ServerState>>, current_move: isize) -> bool {
     let state = state.lock().unwrap();

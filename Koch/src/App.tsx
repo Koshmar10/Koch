@@ -5,7 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { CenterSection } from "./components/CenterSection";
 import { NotificationManager } from "./components/notifications/NotificationManager";
 
-export type AppScreen = "Home" | "Analyzer" | "History" | "Pve" | "Settings";
+export type AppScreen = "Home" | "Analyzer" | "History" | "Pve" | "Settings" | "Puzzle";
 export const removeDefaultForButton = "border-0 p-0 m-0 appearance-none focus:outline-none"
 
 function App() {
@@ -23,7 +23,7 @@ function App() {
   }
 
   return (
-    <main className="bg-dark">
+    <main className="bg-background-dark">
       <div className="flex flex-row w-[100vw] h-[100vh] ">
 
         <Sidebar handleClick={changeSection} selectedScreen={centerSection} />

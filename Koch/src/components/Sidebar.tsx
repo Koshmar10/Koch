@@ -1,5 +1,5 @@
 import { AppScreen } from "../App"
-import { Home, Play, LineChart, History, Settings } from "lucide-react";
+import { Home, Play, LineChart, History, Settings, Puzzle } from "lucide-react";
 
 interface SideBarProps {
     handleClick: (screen: AppScreen) => void;
@@ -9,16 +9,16 @@ interface SideBarProps {
 export function Sidebar({ handleClick, selectedScreen }: SideBarProps) {
     const computeStyle = (screen: AppScreen) => {
         const base =
-            "flex justify-center items-center w-fit h-fit text-secondary/90 py-3 px-3 rounded-lg transition-colors duration-300 ease-in-out";
+            "flex justify-center items-center w-fit h-fit  py-3 px-3 rounded-lg transition-colors duration-300 ease-in-out";
         return screen === selectedScreen
-            ? `${base} bg-accent/80 hover:bg-accent/90`
-            : `${base} hover:bg-accent/50`;
+            ? `${base} bg-accent/80 hover:bg-accent/90 text-sidebar-foreground-dark/90`
+            : `${base} hover:bg-accent/50 text-sidebar-foreground-dark/60 hover:text-sidebar-foreground-dark/80`;
     };
 
     return (
-        <div className="flex flex-col w-[5%] border-r-[1px] border-white/20 gap-6">
-            <div className="flex justify-center items-center pt-8 border-b-[1px] border-white/20 pb-6">
-                <span className="w-fit h-fit px-5 py-3 rounded-lg text-secondary bg-accent text-xl">K</span>
+        <div className="flex flex-col w-[5%] border-r-[1px] border-sidebar-border-dark gap-6 bg-sidebar-dark ">
+            <div className="flex justify-center items-center pt-8 border-b-[1px] border-sidebar-border-dark pb-6">
+                <span className="w-fit h-fit px-5 py-3 rounded-lg text-sidebar-foreground-dark bg-accent text-xl">K</span>
             </div>
 
             <div className="h-full flex flex-col px-2 gap-4 items-center">
@@ -54,7 +54,12 @@ export function Sidebar({ handleClick, selectedScreen }: SideBarProps) {
                 >
                     <History className="w-6 h-6" />
                 </button>
-
+                <button
+                    className={computeStyle("Puzzle")}
+                    aria-label="Puzzle"
+                    onClick={() => handleClick("Puzzle")}>
+                    <Puzzle className="w-6 h-6" />
+                </button>
 
             </div>
             <div className="flex justify-center h-auto p-5 border-t-[1px] border-white/20 ">

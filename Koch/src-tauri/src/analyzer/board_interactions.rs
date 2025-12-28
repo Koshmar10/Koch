@@ -109,7 +109,6 @@ impl Board {
                 self.fullmove_number = self.fullmove_number.saturating_add(1);
             }
 
-            self.been_modified = true;
             let rank: u8 = match moving_piece.color {
                 PieceColor::White => 7,
                 PieceColor::Black => 0,
@@ -267,7 +266,6 @@ impl Board {
             self.fullmove_number = self.fullmove_number.saturating_add(1);
         }
 
-        self.been_modified = true;
         // choose the correct move kind (use the snapshot taken before any mutation)
         let kind = if en_passant_move {
             en_passant_enum
@@ -360,7 +358,6 @@ impl Board {
         self.fullmove_number = undo.prev_state.fullmove_number;
         self.turn = undo.prev_state.turn;
 
-        self.been_modified = true;
         self.rerender_move_cache();
 
         Ok(())

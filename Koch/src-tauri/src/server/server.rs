@@ -1,4 +1,5 @@
 use crate::analyzer::analyzer::{AnalyzerController, EngineCommand};
+use crate::update_settings;
 use crate::{database, engine::Board, game::controller::GameController};
 
 use serde::{Deserialize, Serialize};
@@ -169,10 +170,9 @@ pub struct OpeningEntry<'a> {
 }
 
 pub struct ServerState<'a> {
-    pub board: Board,
     pub engine: Option<Stockfish>,
     pub opening_index: Option<HashMap<String, OpeningEntry<'a>>>,
-    pub game_controller: Option<GameController>,
+    pub game_controller: GameController,
     pub analyzer_controller: AnalyzerController,
     pub analyzer_tx: Option<SyncSender<EngineCommand>>,
     pub analyzer_rx: Option<Receiver<PvObject>>,
@@ -182,11 +182,21 @@ pub struct ServerState<'a> {
 }
 impl<'a> Default for ServerState<'a> {
     fn default() -> Self {
-        let mut board = Board::default();
-        board.rerender_move_cache();
+        let settings = load_settings().unwrap_or_else(|_| Settings {
+            corrupted: true,
+            map: HashMap::new(),
+        });
+        let stockfish_elo = settings
+            .map
+            .get("StockfishElo")
+            .unwrap_or(&"600".to_string())
+            .parse()
+            .unwrap_or(600);
+
         let engine = match Stockfish::new("/usr/bin/stockfish") {
             Ok(mut s) => {
-                if s.setup_for_new_game().is_ok() && s.set_skill_level(16).is_ok() {
+                if s.setup_for_new_game().is_ok() {
+                    s.set_elo(stockfish_elo);
                     Some(s)
                 } else {
                     None
@@ -194,7 +204,7 @@ impl<'a> Default for ServerState<'a> {
             }
             Err(_) => None,
         };
-        let game_controller = None;
+        let game_controller = GameController::default();
         let analyzer_controller = AnalyzerController::default();
 
         let mut opening_index: Option<HashMap<String, OpeningEntry<'a>>> = None;
@@ -227,7 +237,6 @@ impl<'a> Default for ServerState<'a> {
             .inspect_err(|e| eprintln!("{e}"))
             .ok();
         return ServerState {
-            board,
             engine,
             game_controller,
             analyzer_controller,
@@ -236,10 +245,25 @@ impl<'a> Default for ServerState<'a> {
             opening_index: opening_index,
             total_memory: 0.0,
             nbcpu: 1,
-            settings: load_settings().unwrap_or_else(|_| Settings {
-                corrupted: true,
-                map: HashMap::new(),
-            }),
+            settings: settings,
+        };
+    }
+}
+impl<'a> ServerState<'a> {
+    pub fn update_elo(&mut self, elo_delta: i32) {
+        let string_elo = self.settings.map.get("PlayerElo");
+        match string_elo {
+            Some(elo) => {
+                let num_elo = elo.parse::<i32>().unwrap();
+                let updated_elo = num_elo + elo_delta;
+                self.settings
+                    .update("PlayerElo".to_string(), updated_elo.to_string());
+                self.settings
+                    .update("StockfishElo".to_string(), (updated_elo + 50).to_string());
+            }
+            None => {
+                println!("[SETTINGS] No player elo in settings")
+            }
         };
     }
 }

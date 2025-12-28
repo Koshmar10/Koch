@@ -24,7 +24,7 @@ export function EngineData({ pvObject, engineRunning, setEngineRunning, startEng
     return (
         <div className="analyzer-out flex flex-col gap-2 w-[100%]">
             <div className="flex w-full items-center justify-between">
-                <span className="text-secondary/80 text-md tracking-wide">Engine</span>
+                <span className="text-foreground-dark/80 text-md tracking-wide">Engine</span>
                 {engineRunning ? (
                     <div className="inline-flex items-center gap-2 rounded-md bg-green-700/40 border border-green-500/60 px-3 py-1 cursor-pointer"
                         onClick={async (e) => {
@@ -52,7 +52,7 @@ export function EngineData({ pvObject, engineRunning, setEngineRunning, startEng
                     </div>
                 )}
             </div>
-            <div className="mb-4">
+            <div className="">
                 {localPv && (
                     <span className="text-xs text-secondary">depth({localPv.depth})</span>
                 )}
@@ -84,7 +84,7 @@ export function EngineData({ pvObject, engineRunning, setEngineRunning, startEng
                                             : (line.eval_value / 100).toFixed(2)}
                                     </span>
                                     <span
-                                        className="inline-block max-w-full truncate text-secondary/90"
+                                        className="inline-block max-w-full truncate text-foreground-dark/90"
                                         title={line.moves}
                                     >
                                         {line.moves}

@@ -59,67 +59,67 @@ export function AnalyzerInputs({
             style={{ height: `${height}px` }}>
 
             <div className="flex flex-col w-full gap-2">
-                <p className="text-secondary/50 text-xs">Navigation</p>
+                <p className="text-foreground-dark/70 text-xs">Navigation</p>
                 <div className="flex flex-row justify-center w-full gap-2">
                     {/* First */}
                     <button
-                        className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
+                        className="w-full flex justify-center items-center bg-card-dark border-[1px] border-accent/50 rounded-sm py-1 disabled:opacity-50 text-foreground-dark/80 hover:text-primary/50"
                         disabled={currentMove === -1 || isFetching}
                         onClick={(e) => { e.preventDefault(); onFirst(); }}
                     >
-                        <ChevronFirst className="text-secondary/50 w-4 h-4" />
+                        <ChevronFirst size={20} />
                     </button>
 
                     {/* Prev */}
                     <button
-                        className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
+                        className="w-full flex justify-center items-center bg-card-dark border-[1px] border-accent/50 rounded-sm py-1 disabled:opacity-50 text-foreground-dark/80 hover:text-primary/50"
                         disabled={currentMove === -1 || isFetching}
                         onClick={(e) => { e.preventDefault(); onPrev(-1); }}
                     >
-                        <ChevronLeft className="text-secondary/90 w-4 h-4" />
+                        <ChevronLeft size={20} />
                     </button>
 
                     {/* Next */}
                     <button
-                        className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm py-1 disabled:opacity-50"
+                        className="w-full flex justify-center items-center bg-card-dark border-[1px] border-accent/50 rounded-sm py-1 disabled:opacity-50 text-foreground-dark/80 hover:text-primary/50"
                         disabled={currentMove >= totalMoves || isFetching}
                         onClick={(e) => { e.preventDefault(); onNext(1); }}
                     >
-                        <ChevronRight className="text-secondary/90 w-4 h-4" />
+                        <ChevronRight size={20} />
                     </button>
 
                     {/* Last */}
                     <button
-                        className="w-full flex justify-center items-center bg-primary/20 border-[1px] border-accent/70 rounded-sm disabled:opacity-50"
+                        className="w-full flex justify-center items-center bg-card-dark border-[1px] border-accent/50 rounded-sm py-1 disabled:opacity-50 text-foreground-dark/80 hover:text-primary/50"
                         disabled={currentMove >= totalMoves || isFetching}
                         onClick={(e) => { e.preventDefault(); onLast(); }}
                     >
-                        <ChevronLast className="text-secondary/50 w-4 h-4" />
+                        <ChevronLast size={20} />
                     </button>
                 </div>
 
-                <button className="my-2 py-2 px-3 bg-accent text-md text-secondary/80">
+                <button className="my-2 py-2 px-3 bg-primary/90 text-md text-foreground-dark/90">
                     Move {currentMove}
                 </button>
             </div>
 
             <div className="flex flex-col w-full gap-2">
-                <p className="text-secondary/50 text-xs">Analysis Tools</p>
+                <p className="text-foreground-dark/70 text-xs">Analysis Tools</p>
                 {/* ... Tools UI remains the same ... */}
                 <div className={`flex flex-row w-full justify-start items-center gap-2 text-sm p-1 rounded-md hover:cursor-pointer ${threatsActive ? 'bg-primary/60' : 'hover:bg-primary/60'}`}
                     onClick={(e) => { e.preventDefault(); setThreatsActive(v => !v); }}>
-                    <Flame className="w-4 h-4 text-secondary" />
-                    <span className="text-secondary">Threats</span>
+                    <Flame className="w-4 h-4 text-foreground-dark" />
+                    <span className="text-foreground-dark">Threats</span>
                 </div>
                 <div className={`flex flex-row w-full justify-start items-center gap-2 p-1 rounded-md text-sm hover:cursor-pointer ${attacksActive ? 'bg-primary/60' : 'hover:bg-primary/60'}`}
                     onClick={(e) => { e.preventDefault(); setAttacksActive(v => !v); }}>
-                    <Target className="w-4 h-4 text-secondary" />
-                    <span className="text-secondary">Attacks</span>
+                    <Target className="w-4 h-4 text-foreground-dark" />
+                    <span className="text-foreground-dark">Attacks</span>
                 </div>
                 <div className={`flex flex-row w-full justify-start items-center gap-2 p-1 rounded-md text-sm hover:cursor-pointer ${suggestionsActive ? 'bg-primary/60' : ' hover:bg-primary/60 '}`}
                     onClick={(e) => { e.preventDefault(); setSuggestionsActive(v => !v); }}>
-                    <Lightbulb className="w-4 h-4 text-secondary " />
-                    <span className="text-secondary">Suggestion</span>
+                    <Lightbulb className="w-4 h-4 text-foreground-dark " />
+                    <span className="text-foreground-dark">Suggestion</span>
                 </div>
             </div>
 

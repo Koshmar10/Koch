@@ -4,4 +4,4 @@ import type { LocalChat } from "./LocalChat";
 import type { PvObject } from "./PvObject";
 import type { UndoInfo } from "./UndoInfo";
 
-export type AnalyzerController = { game_id: number, board: Board, current_ply: number, board_undo: Array<UndoInfo>, last_threat: string | null, last_pv: PvObject | null, chat_history: LocalChat | null, };
+export type AnalyzerController = { game_id: number, board: Board, current_ply: number, board_undo: Array<UndoInfo>, last_threat: string | null, last_pv: PvObject | null, chat_history: LocalChat, };

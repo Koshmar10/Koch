@@ -14,45 +14,56 @@ type AnalyzerMode = "game" | "sandbox";
 const sectionTitle = (Icon: React.ElementType, text: React.ReactNode) => {
     return (
         <div className="flex items-center gap-2 ">
-            <Icon className="h-4 w-4 text-secondary/50" />
-            <span className="text-xs uppercase tracking-wider text-secondary/60">{text}</span>
+            <Icon className="h-4 w-4 text-foreground-dark/50" />
+            <span className="text-xs uppercase tracking-wider text-foreground-dark/60">{text}</span>
         </div>
 
     );
 };
 
 const loadAnalyzerModeContent = (mode: AnalyzerMode, analyzer: AnalyzerController | null, open?: () => void) => {
+    const [isHovered, setIsHovered] = useState(false);
     if (mode == "game")
         if (analyzer?.game_id) {
             return (
-                <div className="flex flex-col w-full gap-4">
-                    <div className="game-card flex flex-col w-full text-sm bg-dark px-4 py-2 rounded-lg border-[1px] border-primary/60 hover:border-primary hover:cursor-pointer hover:text-primary transition-colors duration-100"
-                        onClick={(e) => { e.preventDefault(); open && open(); }}>
-                        <span className="mb-1 text-[0.92rem] hover:text-primary ">{analyzer.board.meta_data.white_player_name} Vs. {analyzer.board.meta_data.black_player_name}</span>
-                        <span className="text-[0.8rem] text-secondary/80">{analyzer.board.meta_data.date} * {analyzer.board.meta_data.opening}</span>
+                <div className="flex flex-col w-full gap-4 ">
+
+
+                    <div
+                        className="game-card flex flex-col w-full text-sm bg-dark px-4 py-2 rounded-lg border-[1px] border-primary/60 hover:border-primary hover:cursor-pointer hover:text-primary transition-colors duration-100 "
+                        onClick={(e) => { e.preventDefault(); open && open(); }}
+                        onMouseEnter={() => setIsHovered(true)}
+                        onMouseLeave={() => setIsHovered(false)}
+                    >
+                        <span
+                            className={`mb-1 text-foreground-dark text-[0.92rem] ${isHovered ? 'text-primary' : 'hover:text-primary'}`}
+                        >
+                            {analyzer.board.meta_data.white_player_name} Vs. {analyzer.board.meta_data.black_player_name}
+                        </span>
+                        <span className="text-[0.8rem] text-foreground-dark/80">{analyzer.board.meta_data.date} * {analyzer.board.meta_data.opening}</span>
                     </div>
 
-                    <div className="flex flex-row gap-10 w-full">
-                        <div className="flex flex-col text-xs gap-3">
+                    <div className="flex flex-row gap-10 w-[100%]">
+                        <div className="flex flex-col text-xs gap-3 w-full">
                             <div className="flex flex-col">
-                                <span className="uppercase tracking-wide text-secondary/60">White</span>
-                                <span className="text-sm font-medium text-secondary">{analyzer.board.meta_data.white_player_name}</span>
-                                <span className="text-[0.8rem] text-secondary/70">ELO: <span className="font-semibold text-secondary">{analyzer.board.meta_data.white_player_elo}</span></span>
+                                <span className="uppercase tracking-wide text-foreground-dark/60">White</span>
+                                <span className="text-sm font-medium text-foreground-dark">{analyzer.board.meta_data.white_player_name}</span>
+                                <span className="text-[0.8rem] text-foreground-dark/70">ELO: <span className="font-semibold text-foreground-dark">{analyzer.board.meta_data.white_player_elo}</span></span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="uppercase tracking-wide text-secondary/60">Date</span>
-                                <span className="text-sm font-medium text-secondary">{analyzer.board.meta_data.date}</span>
+                                <span className="uppercase tracking-wide text-foreground-dark/60">Date</span>
+                                <span className="text-sm font-medium text-foreground-dark">{analyzer.board.meta_data.date}</span>
                             </div>
                         </div>
-                        <div className="flex flex-col text-xs gap-3">
+                        <div className="flex flex-col text-xs gap-3 w-full">
                             <div className="flex flex-col">
-                                <span className="uppercase tracking-wide text-secondary/60">Black</span>
-                                <span className="text-sm font-medium text-secondary">{analyzer.board.meta_data.black_player_name}</span>
-                                <span className="text-[0.8rem] text-secondary/70">ELO: <span className="font-semibold text-secondary">{analyzer.board.meta_data.black_player_elo}</span></span>
+                                <span className="uppercase tracking-wide text-foreground-dark/60">Black</span>
+                                <span className="text-sm font-medium text-foreground-dark">{analyzer.board.meta_data.black_player_name}</span>
+                                <span className="text-[0.8rem] text-foreground-dark/70">ELO: <span className="font-semibold text-foreground-dark">{analyzer.board.meta_data.black_player_elo}</span></span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="uppercase tracking-wide text-secondary/60">Result</span>
-                                <span className="text-sm font-medium text-secondary">{analyzer.board.meta_data.result}</span>
+                                <span className="uppercase tracking-wide text-foreground-dark/60">Result</span>
+                                <span className="text-sm font-medium text-foreground-dark">{analyzer.board.meta_data.result}</span>
                             </div>
                         </div>
                     </div>
@@ -63,16 +74,28 @@ const loadAnalyzerModeContent = (mode: AnalyzerMode, analyzer: AnalyzerControlle
         }
         else {
             return (
-                <div>
-                    no game data
+                <div className="flex flex-col items-center justify-center gap-3 py-6">
+                    No game data
                 </div>
 
             )
         }
     if (mode == "sandbox")
         return (
-            <div>
-                sand
+            <div className="flex flex-col items-center justify-center gap-3 py-6">
+                <span className="text-sm text-foreground-dark/80 mb-2">No game loaded. Start a sandbox analysis or load a position:</span>
+                <div className="flex flex-row gap-4">
+                    <button
+                        className="px-4 py-1 rounded-md bg-primary/80 text-foreground-dark font-medium hover:bg-primary transition-colors"
+                    >
+                        Load PGN
+                    </button>
+                    <button
+                        className="px-4 py-1 rounded-md bg-accent/80 text-foreground-dark font-medium hover:bg-accent transition-colors"
+                    >
+                        Load FEN
+                    </button>
+                </div>
             </div>
         )
 }
@@ -169,19 +192,19 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
     }
 
     return (
-        <div className="flex flex-col h-full w-[24%]">
-            <div className="flex flex-col gap-2  bg-primary/20 border-b-2 border-r-2 border-accent/60 h-[30%] w-full p-4">
+        <div className="flex flex-col h-full w-[32%] bg-card-dark/30 border-r-2 border-border-dark">
+            <div className="flex flex-col gap-2  border-b-2 border-border-dark h-[30%] w-full p-4">
                 {sectionTitle(Layers, "Analyzer Mode")}
-                <div className="game-sandbox-buttons flex flex-row gap-4 w-full justify-center">
+                <div className="game-sandbox-buttons flex flex-row gap-4 w-full justify-center py-4">
                     <button
-                        className={`w-full py-1 rounded-md flex items-center justify-center gap-2 ${selectedMode == "sandbox" ? 'bg-accent' : 'bg-primary/30'}`}
+                        className={`w-full  py-1 rounded-md flex items-center justify-center gap-2 ${selectedMode == "sandbox" ? 'bg-accent text-foreground-dark' : 'bg-primary/30 text-foreground-dark/80'}`}
                         onClick={() => setSelectedMode("sandbox")}
                     >
                         <Box className="h-4 w-4" />
                         Sandbox
                     </button>
                     <button
-                        className={`w-full py-1 rounded-md flex items-center justify-center gap-2 ${selectedMode == "game" ? 'bg-accent' : 'bg-primary/30'}`}
+                        className={`w-full py-1 rounded-md flex items-center justify-center gap-2 ${selectedMode == "game" ? 'bg-accent text-foreground-dark' : 'bg-primary/30 text-foreground-dark/80'}`}
                         onClick={() => setSelectedMode("game")}
                     >
                         <Layers className="h-4 w-4" />
@@ -190,13 +213,13 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
                 </div>
                 {loadAnalyzerModeContent(selectedMode, analyzer, openGameSelectPopup)}
             </div>
-            <div className="bg-primary/20 border-b-2 border-r-2 border-accent/60 p-4 h-[28%]">
+            <div className=" p-4 h-[28%]">
                 {sectionTitle(Settings, "Engine Settings")}
                 <div className="flex flex-col gap-3 w-full mt-4 justify-center items-center mb-4">
                     <div className="relative w-[95%]">
-                        <label className="block text-xs text-secondary/70 mb-1">Multi-PV</label>
+                        <label className="block text-xs text-foreground-dark/70 mb-1">Multi-PV</label>
                         <select
-                            className="w-full p-1 rounded bg-primary/80 text-secondary border border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
+                            className="w-full px-4 py-1 rounded bg-background-dark text-foreground-dark border border-primary/20 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
                             disabled={changeingOption}
                             value={currentPv}
                             onChange={(e) => {
@@ -205,20 +228,20 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
                                 changeOption("MultiPv" as EngineOption, e.target.value);
                             }}
                         >
-                            <option value="1" className="bg-primary text-secondary">1 Variation</option>
-                            <option value="2" className="bg-primary text-secondary">2 Variations</option>
-                            <option value="3" className="bg-primary text-secondary">3 Variations</option>
-                            <option value="4" className="bg-primary text-secondary">4 Variations</option>
-                            <option value="5" className="bg-primary text-secondary">5 Variations</option>
+                            <option value="1" className="bg-primary text-foreground-dark">1 Variation</option>
+                            <option value="2" className="bg-primary text-foreground-dark">2 Variations</option>
+                            <option value="3" className="bg-primary text-foreground-dark">3 Variations</option>
+                            <option value="4" className="bg-primary text-foreground-dark">4 Variations</option>
+                            <option value="5" className="bg-primary text-foreground-dark">5 Variations</option>
                         </select>
-                        <span className="pointer-events-none absolute right-2  text-secondary/60">
+                        <span className="pointer-events-none absolute right-2  text-foreground-dark/60">
                             ▼
                         </span>
                     </div>
                     <div className="relative w-[95%]">
-                        <label className="block text-xs text-secondary/70 mb-1">Threads</label>
+                        <label className="block text-xs text-foreground-dark/70 mb-1">Threads</label>
                         <select
-                            className="w-full p-1 rounded bg-primary/80 text-secondary border border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
+                            className="w-full px-4 py-1 rounded bg-background-dark text-foreground-dark border border-primary/20 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
                             disabled={changeingOption}
                             value={currentThreads}
                             onChange={(e) => {
@@ -228,19 +251,19 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
                             }}
                         >
                             {threadOptions.map(t => (
-                                <option key={t} value={t} className="bg-primary text-secondary">
+                                <option key={t} value={t} className="bg-primary text-foreground-dark">
                                     {t}
                                 </option>
                             ))}
                         </select>
-                        <span className="pointer-events-none absolute right-2  text-secondary/60">
+                        <span className="pointer-events-none absolute right-2  text-foreground-dark/60">
                             ▼
                         </span>
                     </div>
                     <div className="relative w-[95%]">
-                        <label className="block text-xs text-secondary/70 mb-1">Hash Size</label>
+                        <label className="block text-xs text-foreground-dark/70 mb-1">Hash Size</label>
                         <select
-                            className="w-full p-1 rounded bg-primary/80 text-secondary border border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
+                            className="w-full px-4 py-1 rounded bg-background-dark text-foreground-dark border border-primary/20 focus:outline-none focus:ring-2 focus:ring-accent transition text-sm appearance-none pr-8"
                             disabled={changeingOption}
                             value={currentHash}
                             onChange={(e) => {
@@ -250,21 +273,21 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
                             }}
                         >
                             {hashOptions.map(h => (
-                                <option key={h} value={h} className="bg-primary text-secondary">
+                                <option key={h} value={h} className="bg-primary text-foreground-dark">
                                     {h} MB
                                 </option>
                             ))}
                         </select>
-                        <span className="pointer-events-none absolute right-2 text-secondary/60">
+                        <span className="pointer-events-none absolute right-2 text-foreground-dark/60">
                             ▼
                         </span>
                     </div>
                 </div>
             </div>
-            <div className="bg-primary/20 border-b-2 border-r-2 border-accent/60 h-full p-4 ">
+            <div className="border border-b-2 border-border-dark h-full p-4 overflow-scroll scrollbar-hide">
                 {sectionTitle(GitBranch, "Move Timeline")}
-                <div className="flex flex-row w-full mt-4">
-                    <div className="flex flex-col items-end pr-2 text-xs text-secondary/60 min-w-[2rem]">
+                <div className="flex flex-row w-full mt-4 ">
+                    <div className="flex flex-col items-end pr-2 text-xs text-foreground-dark/60 min-w-[1rem]">
                         {
                             analyzer && analyzer.board.meta_data.move_list.length > 0 &&
                             Array.from({ length: Math.ceil(analyzer.board.meta_data.move_list.length / 2) }, (_, i) => (
@@ -272,31 +295,31 @@ export function AnalyzerSettings({ analyzer, setEngineLoading, startEngine, open
                             ))
                         }
                     </div>
-                    <div className="flex flex-col w-full">
+                    <div className="flex flex-col w-[45%] ">
                         {
                             analyzer && analyzer.board.meta_data.move_list.map((mv, idx) =>
                                 idx % 2 === 0 ? (
                                     <div
                                         key={idx}
-                                        className={`h-6 flex items-center px-2 rounded text-white/80  text-sm font-medium 
+                                        className={`h-6 flex justify-between items-center px-2 rounded text-white/80  text-sm font-medium 
                                             ${analyzer.current_ply == idx ? 'bg-accent/20' : 'hover:bg-accent/20'}`}
                                     >
-                                        {mv.uci}
+                                        {mv.san} <span className="text-accent/30">{mv.clock?.slice(0, -3)} </span>
                                     </div>
                                 ) : null
                             )
                         }
                     </div>
-                    <div className="flex flex-col w-full">
+                    <div className="flex flex-col w-[45%]">
                         {
                             analyzer && analyzer.board.meta_data.move_list.map((mv, idx) =>
                                 idx % 2 === 1 ? (
                                     <div
                                         key={idx}
-                                        className={`h-6 flex items-center px-2 rounded text-white/80  text-sm font-medium 
-                                            ${analyzer.current_ply == idx ? 'bg-accent/20' : 'hover:bg-accent/20'}`}
+                                        className={`h-6 flex  justify-between items-center px-2 rounded text-white/80  text-sm font-medium 
+                                            ${analyzer.current_ply == idx ? 'bg-accent/20' : 'hover:bg-accent/20'} gap-4`}
                                     >
-                                        {mv.uci}
+                                        {mv.san} <span className="text-accent/30">{mv.clock?.slice(0, -3)} </span>
                                     </div>
                                 ) : null
                             )

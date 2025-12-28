@@ -13,7 +13,7 @@ export function PieceLayer({ optimisticPieces, flipped, squareSize, ghostPieces 
     const getVisualCoords = (r: number, c: number) => {
         return flipped ? [7 - r, 7 - c] : [r, c];
     };
-    return (<>
+    return (<div className="pointer-events-none">
         {optimisticPieces.map(({ piece, r, c, to_render }) => {
             if (!to_render) return null;
 
@@ -45,5 +45,5 @@ export function PieceLayer({ optimisticPieces, flipped, squareSize, ghostPieces 
             );
         })}
 
-    </>)
+    </div>)
 }
